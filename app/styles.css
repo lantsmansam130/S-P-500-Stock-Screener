@@ -125,6 +125,14 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2
 .search .clear { color: var(--fg-3); display: none; line-height: 0; }
 .search.has-value .clear { display: block; }
 
+.refresh { flex: none; }
+.refresh:disabled { opacity: .6; cursor: progress; }
+.refresh.spin svg { animation: spin 1s linear infinite; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 30; top: calc(64px + env(safe-area-inset-top, 0px));
+  max-width: min(520px, calc(100% - 32px)); padding: 10px 14px; border-radius: 12px; font-size: 13.5px; line-height: 1.4;
+  background: var(--glass-strong); box-shadow: var(--shadow); color: var(--fg);
+}
 .seg { display: inline-flex; padding: 3px; border-radius: 11px; gap: 2px; }
 .seg button {
   padding: 5px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--fg-2);

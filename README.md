@@ -49,6 +49,15 @@ run, and the Screener tab shows the same rules as one-tap presets whose counts
 are computed live, so you can also tune the threshold and time frame in the UI
 without editing anything.
 
+## Refreshing
+
+The refresh button in the top bar re-reads every data file (bypassing caches)
+and redraws, so on GitHub Pages it picks up the daily job's output without a
+page reload. Generating new data means running the pipeline: the scheduled
+workflow does that on weekdays, `workflow_dispatch` runs it on demand, and the
+"S&P 500 Screener: refresh data" Routine in claude.ai runs it and republishes
+the artifact.
+
 ## Deploy
 
 1. In the repository settings, under Pages, set the source to **GitHub Actions**.

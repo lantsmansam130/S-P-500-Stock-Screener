@@ -27,7 +27,9 @@
       <input id="search" type="search" placeholder="Search ticker or company" autocomplete="off" spellcheck="false" aria-label="Search ticker or company">
       <button type="button" class="clear" id="clear" aria-label="Clear search"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </label>
+    <button type="button" class="iconbtn refresh" id="refresh" aria-label="Refresh all data" title="Refresh all data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
   </header>
+  <div class="toast glass" id="toast" role="status" aria-live="polite" hidden></div>
   <div class="main">
     <nav class="rail" id="rail" aria-label="Sectors"></nav>
     <section class="content">

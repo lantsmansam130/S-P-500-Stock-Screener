@@ -64,8 +64,8 @@
   };
 
   // ---------- data ----------
-  async function load() {
-    const res = await fetch("data/stocks.json", { cache: "no-cache" });
+  async function load(force) {
+    const res = await fetch("data/stocks.json", { cache: force ? "reload" : "no-cache" });
     if (!res.ok) throw new Error("stocks.json " + res.status);
     state.data = await res.json();
     state.bySym = Object.fromEntries(state.data.stocks.map((s) => [s.t, s]));
@@ -75,7 +75,34 @@
       sec.chg = capWeighted(rows);
       for (const g of sec.groups) g.chg = capWeighted(rows.filter((s) => s.group === g.name));
     }
-    try { const r = await fetch("data/alerts.json", { cache: "no-cache" }); if (r.ok) { const a = await r.json(); if (a.rules?.length) state.rules = a.rules; } } catch (_) { /* optional */ }
+    try { const r = await fetch("data/alerts.json", { cache: force ? "reload" : "no-cache" }); if (r.ok) { const a = await r.json(); if (a.rules?.length) state.rules = a.rules; } } catch (_) { /* optional */ }
+    if (force) state.history = {};
+  }
+  function setAsOf() {
+    const asOf = new Date(state.data.asOf);
+    $("#asof").textContent = `${state.data.count} companies · data as of ${MONTHS[asOf.getMonth()]} ${asOf.getDate()}, ${asOf.getFullYear()} ${asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+  }
+  let toastTimer = null;
+  function toast(msg, ms = 6000) {
+    const t = $("#toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+  }
+  /** Re-read every data file, bypassing caches, and redraw. Picks up whatever the
+      pipeline last published (the daily job on GitHub Pages, or a republish here). */
+  async function refreshAll() {
+    const btn = $("#refresh"); if (btn.disabled) return;
+    btn.disabled = true; btn.classList.add("spin");
+    const before = state.data.asOf;
+    let ok = true;
+    try { await load(true); } catch (_) { ok = false; }
+    setAsOf(); renderAll();
+    if (state.open && state.bySym[state.open]) openDetail(state.open);
+    const asOf = new Date(state.data.asOf);
+    const stamp = `${MONTHS[asOf.getMonth()]} ${asOf.getDate()}, ${asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+    if (!ok) toast("Couldn't reload the data files. Check your connection and try again.", 8000);
+    else if (state.data.asOf !== before) toast(`Updated. Data as of ${stamp}.`, 7000);
+    else toast(`Already showing the latest data on file (${stamp}). The pipeline refreshes weekdays after the close.`, 8000);
+    btn.disabled = false; btn.classList.remove("spin");
   }
   function capWeighted(rows) {
     let num = 0, den = 0;
@@ -505,8 +532,8 @@
       $("#list").replaceChildren(h("div", "loading")).appendChild(h("div", "err", "Could not load data/stocks.json. Run pipeline/fetch_data.py first."));
       console.error(err); return;
     }
-    const asOf = new Date(state.data.asOf);
-    $("#asof").textContent = `${state.data.count} companies · data as of ${MONTHS[asOf.getMonth()]} ${asOf.getDate()}, ${asOf.getFullYear()} ${asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+    setAsOf();
+    $("#refresh").addEventListener("click", refreshAll);
     const search = $("#search");
     search.addEventListener("input", () => { state.query = search.value; search.parentElement.classList.toggle("has-value", !!search.value); renderList(); });
     $("#clear").addEventListener("click", () => { search.value = ""; state.query = ""; search.parentElement.classList.remove("has-value"); renderList(); search.focus(); });
