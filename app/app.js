@@ -19,7 +19,7 @@
     sector: null, group: null, sub: null, query: "", sort: { key: "mcap", dir: -1 },
     screen: { window: "1d", direction: "either", threshold: 4 },
     open: null, range: "1M", earnMode: "q", redraws: [],
-    vol: null, volView: { screen: "rich", window: "rv60", liquid: true, hideEarn: false, hideJump: true },
+    ideas: null, vol: null, volView: { screen: "rich", window: "rv60", liquid: true, hideEarn: false, hideJump: true },
   };
   try { Object.assign(state.screen, JSON.parse(localStorage.getItem("sp500.screen") || "{}")); } catch (_) { /* per-viewer convenience only */ }
   try { Object.assign(state.volView, JSON.parse(localStorage.getItem("sp500.vol") || "{}")); } catch (_) { /* per-viewer convenience only */ }
@@ -79,6 +79,7 @@
     }
     try { const r = await fetch("data/alerts.json", { cache: force ? "reload" : "no-cache" }); if (r.ok) { const a = await r.json(); if (a.rules?.length) state.rules = a.rules; } } catch (_) { /* optional */ }
     try { const r = await fetch("data/vol.json", { cache: force ? "reload" : "no-cache" }); state.vol = r.ok ? await r.json() : null; } catch (_) { state.vol = null; }
+    try { const r = await fetch("data/ideas.json", { cache: force ? "reload" : "no-cache" }); state.ideas = r.ok ? await r.json() : null; } catch (_) { state.ideas = null; }
     if (force) { state.history = {}; state.options = {}; }
   }
   function setAsOf() {
@@ -206,7 +207,7 @@
     for (const sec of state.data.sectors) wrap.appendChild(mk(sec.short, sec.chg, state.sector === sec.name, () => setFilter(state.sector === sec.name ? null : sec.name, null, null)));
     const subWrap = $("#subchips"); subWrap.replaceChildren();
     const sec = state.data.sectors.find((s) => s.name === state.sector);
-    subWrap.hidden = !sec || state.view === "screener" || state.view === "vol";
+    subWrap.hidden = !sec || state.view === "screener" || state.view === "vol" || state.view === "ideas";
     if (sec) {
       subWrap.appendChild(mk("All " + sec.short, null, !state.group, () => setFilter(sec.name, null, null)));
       for (const g of sec.groups) subWrap.appendChild(mk(g.name, null, state.group === g.name, () => setFilter(sec.name, state.group === g.name ? null : g.name, null)));
@@ -537,6 +538,55 @@
     return sec;
   }
 
+  // ---------- rendering: ideas (top 10 for the next session) ----------
+  const PB = { buy: "Buy shares", cc: "Covered call", put: "Buy puts" };
+  function renderIdeas() {
+    const root = $("#ideas"); root.replaceChildren();
+    const panel = h("section", "panel glass");
+    const head = h("div", "ideas-head");
+    head.append(h("h3", null, "Top 10 for the next session"));
+    if (state.ideas) { const asOf = new Date(state.ideas.asOf); head.append(h("span", "meta", `ranked from data as of ${MONTHS[asOf.getMonth()]} ${asOf.getDate()}, ${asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · horizon up to a year`)); }
+    panel.appendChild(head);
+    panel.appendChild(h("p", "hint", "Every S&P 500 name is scored by three rule-based playbooks; each keeps its best, and the ten shown are diversified to at least two per playbook and at most two per sector. The bars show how strongly each factor argued for the name (percentile across the index). A ranking, not advice."));
+    const legend = h("div", "pb-legend");
+    [["buy", "cheap vs sector · EPS growing · beats · trend · calm options"], ["cc", "rich premium · liquid chain · worth holding · steady trend"], ["put", "estimates falling · downtrend · cheap puts · misses"]].forEach(([k, d]) => { const p = h("span", `pb ${k}`); p.append(document.createTextNode(PB[k]), h("small", null, ` ${d}`)); legend.appendChild(p); });
+    panel.appendChild(legend); root.appendChild(panel);
+    if (!state.ideas || !state.ideas.ideas || !state.ideas.ideas.length) { root.appendChild(h("div", "empty", "No ideas on file. Run pipeline/ideas.py after the data refresh.")); return; }
+    const grid = h("div", "idea-grid");
+    for (const i of state.ideas.ideas) grid.appendChild(ideaCard(i));
+    root.appendChild(grid);
+    root.appendChild(h("p", "ideas-foot", "Option contracts are the nearest liquid strike about 5% out of the money at the last refresh; check live quotes before trading. Scores rebuild with every data refresh, so the list changes day to day."));
+  }
+  function ideaCard(i) {
+    const s = state.bySym[i.t] || {};
+    const card = h("article", `idea glass ${i.playbook}`); card.tabIndex = 0; card.setAttribute("role", "button");
+    card.addEventListener("click", () => openDetail(i.t));
+    card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(i.t); } });
+    const top = h("div", "idea-top");
+    const who = h("div", "who");
+    const tkline = h("div", "tkline"); tkline.append(h("span", "tk", i.t), h("span", "sectag", state.sectorShort[i.sector] || i.sector));
+    who.append(tkline, h("div", "nm", i.n));
+    const quote = h("div", "quote"); quote.append(h("div", "px num", fmtPrice(i.price)), pill(i.chgPct));
+    top.append(h("div", "rank num", String(i.rank)), who, quote);
+    card.appendChild(top);
+    if (s.spark) card.appendChild(Charts.sparkline(s.spark));
+    const strat = h("div", "idea-strat");
+    strat.append(h("span", `pb ${i.playbook}`, PB[i.playbook]), h("span", "score num", `score ${Math.round(i.score)}`));
+    if (i.erDays != null) { const er = h("span", `er ${i.erDays <= 7 ? "soon" : ""}`, i.erDays <= 0 ? "Earnings today" : i.erDays === 1 ? "Earnings tomorrow" : `Earnings in ${i.erDays}d · ${fmtDate(i.nextEarnings)}`); strat.appendChild(er); }
+    card.appendChild(strat);
+    const why = h("div", "why"); why.appendChild(h("div", "k", "Why"));
+    for (const r of i.reasons) {
+      const f = h("div", "factor");
+      const bar = h("div", "bar"); const fill = h("i"); fill.style.width = Math.round(r.score * 100) + "%"; bar.appendChild(fill);
+      f.append(h("div", "fl", r.label), bar, h("div", "ft", r.text));
+      why.appendChild(f);
+    }
+    card.appendChild(why);
+    const plan = h("div", "plan"); plan.append(h("b", null, "Plan: "), document.createTextNode(i.plan));
+    card.appendChild(plan);
+    return card;
+  }
+
   // ---------- detail sheet ----------
   async function openDetail(t) {
     const s = state.bySym[t]; if (!s) return;
@@ -792,18 +842,20 @@
   // ---------- view switching ----------
   function setView(v) {
     state.view = v;
-    $("#list").hidden = v !== "markets"; $("#table").hidden = v !== "table"; $("#screener").hidden = v !== "screener"; $("#vol").hidden = v !== "vol"; $("#list-head").hidden = v === "screener" || v === "vol";
+    $("#list").hidden = v !== "markets"; $("#table").hidden = v !== "table"; $("#screener").hidden = v !== "screener"; $("#vol").hidden = v !== "vol"; $("#ideas").hidden = v !== "ideas"; $("#list-head").hidden = v === "screener" || v === "vol" || v === "ideas";
     $$("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
-    $("#subchips").hidden = v === "screener" || v === "vol" || !state.sector;
+    $("#subchips").hidden = v === "screener" || v === "vol" || v === "ideas" || !state.sector;
     if (v === "screener") renderScreener();
     if (v === "table") renderTable();
     if (v === "vol") renderVol();
+    if (v === "ideas") renderIdeas();
   }
   function renderAll() {
     renderRail(); renderChips(); renderList();
     if (state.view === "screener") renderScreener();
     if (state.view === "table") renderTable();
     if (state.view === "vol") renderVol();
+    if (state.view === "ideas") renderIdeas();
   }
   function svgIcon(name) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "2"); svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
@@ -842,7 +894,7 @@
     sheet.addEventListener("touchmove", (e) => { if (y0 != null && e.touches[0].clientY - y0 > 90 && window.innerWidth < 700) { y0 = null; closeDetail(); } }, { passive: true });
     setView("markets"); renderAll();
     const hash = decodeURIComponent(location.hash.slice(1)).toUpperCase();
-    if (hash === "SCREENER") setView("screener"); else if (hash === "TABLE") setView("table"); else if (hash === "VOL") setView("vol"); else if (state.bySym[hash]) openDetail(hash);
+    if (hash === "SCREENER") setView("screener"); else if (hash === "TABLE") setView("table"); else if (hash === "VOL") setView("vol"); else if (hash === "IDEAS") setView("ideas"); else if (state.bySym[hash]) openDetail(hash);
   }
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", boot) : boot();
 })();

@@ -27,10 +27,12 @@ app/                    the site (open index.html, or deploy the folder as-is)
   data/options/*.json   per-sector option chains (next 3 monthlies), lazy-loaded - generated
   data/vol.json         implied vs realized volatility per stock - generated
   data/iv_history.json  front-month ATM implied vol per stock per run, for IV rank later - generated
+  data/ideas.json       the Ideas tab: ten ranked names with playbook, reasons and contract - generated
 pipeline/
   fetch_data.py         Wikipedia constituents + Yahoo Finance (yfinance) -> app/data
   screen.py             applies screener.config.json -> app/data/alerts.json
   vol.py                realized vol, ATM implied vol, premium and ranks -> app/data/vol.json
+  ideas.py              rule-based top-10 for the next session (buy / covered call / puts) -> app/data/ideas.json
   gics.py               sub-industry -> industry group mapping
   build_artifact.py     bundles app/ into dist/index.html for publishing as a claude.ai Artifact
 screener.config.json    the daily screens: window, threshold, direction
@@ -44,6 +46,7 @@ pip install -r pipeline/requirements.txt
 python pipeline/fetch_data.py      # ~3 minutes for all 503 tickers
 python pipeline/screen.py
 python pipeline/vol.py
+python pipeline/ideas.py
 python -m http.server 8000 --directory app   # then open http://localhost:8000
 ```
 
@@ -78,6 +81,19 @@ call and put. The premium is front-month implied minus 60-day realized; the rati
 is ranked across the index and within the sector. Rows flag an earnings date inside
 the front expiration (which legitimately lifts implied vol) and a realized figure
 dominated by a single day's move. Illiquid at-the-money quotes are hidden by default.
+
+## Ideas tab
+
+Ten names for the next session, horizon up to a year, chosen by three rule-based
+playbooks scored from percentile ranks across the index: **buy** (cheap vs. sector
+on forward P/E, EPS expected to grow, beats, positive trend, calm options),
+**covered call** (rich premium over realized, liquid chain, shares worth holding,
+steady trend, no earnings before expiry; suggests the nearest monthly call about 5%
+out of the money) and **buy puts** (falling estimates, downtrend, cheap puts, recent
+misses; suggests the longest monthly put about 5% out of the money). Each stock
+keeps its best playbook; the ten are diversified to at least two per playbook and
+at most two per sector. Factor bars show why each name scored. It is a ranking
+from the last data refresh, not advice.
 
 ## Deploy
 
