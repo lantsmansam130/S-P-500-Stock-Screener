@@ -25,9 +25,12 @@ app/                    the site (open index.html, or deploy the folder as-is)
   data/alerts.json      the daily screen results - generated
   data/history/*.json   per-sector price history + news bundles, lazy-loaded - generated
   data/options/*.json   per-sector option chains (next 3 monthlies), lazy-loaded - generated
+  data/vol.json         implied vs realized volatility per stock - generated
+  data/iv_history.json  front-month ATM implied vol per stock per run, for IV rank later - generated
 pipeline/
   fetch_data.py         Wikipedia constituents + Yahoo Finance (yfinance) -> app/data
   screen.py             applies screener.config.json -> app/data/alerts.json
+  vol.py                realized vol, ATM implied vol, premium and ranks -> app/data/vol.json
   gics.py               sub-industry -> industry group mapping
   build_artifact.py     bundles app/ into dist/index.html for publishing as a claude.ai Artifact
 screener.config.json    the daily screens: window, threshold, direction
@@ -40,6 +43,7 @@ screener.config.json    the daily screens: window, threshold, direction
 pip install -r pipeline/requirements.txt
 python pipeline/fetch_data.py      # ~3 minutes for all 503 tickers
 python pipeline/screen.py
+python pipeline/vol.py
 python -m http.server 8000 --directory app   # then open http://localhost:8000
 ```
 
@@ -63,6 +67,17 @@ page reload. Generating new data means running the pipeline: the scheduled
 workflow does that on weekdays, `workflow_dispatch` runs it on demand, and the
 "S&P 500 Screener: refresh data" Routine in claude.ai runs it and republishes
 the artifact.
+
+## Vol tab
+
+Implied vs. realized volatility, the variance risk premium. Realized vol is the
+annualised standard deviation of daily log returns over 20, 60 and 250 trading days.
+Implied vol is the at-the-money figure for each monthly expiration, interpolated
+between the two strikes around the spot from quotes with a live bid, averaging the
+call and put. The premium is front-month implied minus 60-day realized; the ratio
+is ranked across the index and within the sector. Rows flag an earnings date inside
+the front expiration (which legitimately lifts implied vol) and a realized figure
+dominated by a single day's move. Illiquid at-the-money quotes are hidden by default.
 
 ## Deploy
 

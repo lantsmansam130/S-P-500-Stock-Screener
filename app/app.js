@@ -19,8 +19,10 @@
     sector: null, group: null, sub: null, query: "", sort: { key: "mcap", dir: -1 },
     screen: { window: "1d", direction: "either", threshold: 4 },
     open: null, range: "1M", earnMode: "q", redraws: [],
+    vol: null, volView: { screen: "rich", window: "rv60", liquid: true, hideEarn: false, hideJump: true },
   };
   try { Object.assign(state.screen, JSON.parse(localStorage.getItem("sp500.screen") || "{}")); } catch (_) { /* per-viewer convenience only */ }
+  try { Object.assign(state.volView, JSON.parse(localStorage.getItem("sp500.vol") || "{}")); } catch (_) { /* per-viewer convenience only */ }
 
   // ---------- formatting ----------
   const fmtPrice = (v) => v == null ? "—" : "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -76,6 +78,7 @@
       for (const g of sec.groups) g.chg = capWeighted(rows.filter((s) => s.group === g.name));
     }
     try { const r = await fetch("data/alerts.json", { cache: force ? "reload" : "no-cache" }); if (r.ok) { const a = await r.json(); if (a.rules?.length) state.rules = a.rules; } } catch (_) { /* optional */ }
+    try { const r = await fetch("data/vol.json", { cache: force ? "reload" : "no-cache" }); state.vol = r.ok ? await r.json() : null; } catch (_) { state.vol = null; }
     if (force) { state.history = {}; state.options = {}; }
   }
   function setAsOf() {
@@ -203,7 +206,7 @@
     for (const sec of state.data.sectors) wrap.appendChild(mk(sec.short, sec.chg, state.sector === sec.name, () => setFilter(state.sector === sec.name ? null : sec.name, null, null)));
     const subWrap = $("#subchips"); subWrap.replaceChildren();
     const sec = state.data.sectors.find((s) => s.name === state.sector);
-    subWrap.hidden = !sec || state.view === "screener";
+    subWrap.hidden = !sec || state.view === "screener" || state.view === "vol";
     if (sec) {
       subWrap.appendChild(mk("All " + sec.short, null, !state.group, () => setFilter(sec.name, null, null)));
       for (const g of sec.groups) subWrap.appendChild(mk(g.name, null, state.group === g.name, () => setFilter(sec.name, state.group === g.name ? null : g.name, null)));
@@ -420,6 +423,120 @@
   }
   function saveScreen() { try { localStorage.setItem("sp500.screen", JSON.stringify(state.screen)); } catch (_) { /* ignore */ } }
 
+  // ---------- rendering: vol (implied vs realized) ----------
+  const RV_LABEL = { rv20: "20-day", rv60: "60-day", rv250: "1-year" };
+  const fmtVol = (v) => v == null ? "—" : v.toFixed(0) + "%";
+  const volRow = (t) => state.vol && state.vol.rows ? state.vol.rows[t] : null;
+  const isLiquid = (iv0) => iv0 && iv0.oi >= 50 && (iv0.spr == null || iv0.spr <= 0.25);
+  function saveVol() { try { localStorage.setItem("sp500.vol", JSON.stringify(state.volView)); } catch (_) { /* ignore */ } }
+  function renderVol() {
+    const root = $("#vol"); root.replaceChildren();
+    const panel = h("section", "panel glass");
+    panel.append(h("h3", null, "Implied vs. realized volatility"),
+      h("p", "hint", "Options price a future volatility (implied). The stock's own history gives a realized one. The gap between them is the variance risk premium: usually positive, and widest where premium is richest to sell, narrowest or negative where it is cheapest to own."));
+    if (!state.vol) { panel.appendChild(h("p", "hint err", "No volatility data on file. Run pipeline/vol.py after the data refresh.")); root.appendChild(panel); return; }
+    const grid = h("div", "ctrl-grid");
+    const mkSeg = (label, key, options) => {
+      const c = h("div", "ctrl"); c.appendChild(h("span", "lbl", label)); const seg = h("div", "seg glass small");
+      for (const [k, l] of options) { const b = h("button", null, l); b.type = "button"; b.setAttribute("aria-pressed", String(state.volView[key] === k)); b.addEventListener("click", () => { state.volView[key] = k; saveVol(); renderVol(); }); seg.appendChild(b); }
+      c.appendChild(seg); return c;
+    };
+    grid.appendChild(mkSeg("Screen", "screen", [["rich", "Rich premium"], ["cheap", "Cheap premium"], ["all", "All"]]));
+    grid.appendChild(mkSeg("Realized window", "window", [["rv20", "20d"], ["rv60", "60d"], ["rv250", "1y"]]));
+    const filters = h("div", "ctrl"); filters.appendChild(h("span", "lbl", "Filters"));
+    const mkToggle = (key, label, id) => { const lab = h("label", "toggle"); const cb = document.createElement("input"); cb.type = "checkbox"; cb.id = id; cb.checked = !!state.volView[key]; cb.addEventListener("change", () => { state.volView[key] = cb.checked; saveVol(); renderVol(); }); lab.append(cb, document.createTextNode(label)); return lab; };
+    const fwrap = h("div"); fwrap.style.display = "flex"; fwrap.style.flexDirection = "column"; fwrap.style.gap = "2px";
+    fwrap.append(mkToggle("liquid", "Liquid at-the-money quotes only (open interest 50+, spread under 25%)", "vol-liquid"),
+      mkToggle("hideJump", "Hide names where one day supplied over half the realized variance", "vol-jump"),
+      mkToggle("hideEarn", "Hide names with earnings inside the front expiration", "vol-earn"));
+    filters.appendChild(fwrap); grid.appendChild(filters);
+    panel.appendChild(grid); root.appendChild(panel);
+    // rows
+    const { screen, window: win, liquid, hideEarn, hideJump } = state.volView;
+    const scope = state.sector ? state.data.stocks.filter((s) => s.sector === state.sector) : state.data.stocks;
+    let rows = scope.map((s) => ({ s, v: volRow(s.t) })).filter(({ v }) => v && v.iv && v.iv.length && v[win] != null);
+    if (liquid) rows = rows.filter(({ v }) => isLiquid(v.iv[0]));
+    if (hideEarn) rows = rows.filter(({ v }) => !v.iv[0].earn);
+    if (hideJump) rows = rows.filter(({ v }) => !(v.jump != null && v.jump > 0.5));
+    rows.forEach((r) => { r.ratio = r.v.iv[0].iv / r.v[win]; r.prem = r.v.iv[0].iv - r.v[win]; });
+    if (screen === "rich") rows = rows.filter((r) => r.ratio >= 1.15).sort((a, b) => b.ratio - a.ratio);
+    else if (screen === "cheap") rows = rows.filter((r) => r.ratio <= 0.9).sort((a, b) => a.ratio - b.ratio);
+    else rows.sort((a, b) => b.ratio - a.ratio);
+    const head = h("div", "result-head");
+    head.appendChild(h("h3", null, `${rows.length} ${rows.length === 1 ? "stock" : "stocks"}`));
+    const meta = h("span", "meta");
+    meta.textContent = screen === "rich" ? `front-month implied vol at least 15% above ${RV_LABEL[win]} realized` : screen === "cheap" ? `front-month implied vol at least 10% below ${RV_LABEL[win]} realized` : `ranked by front-month implied over ${RV_LABEL[win]} realized`;
+    if (state.sector) meta.textContent += ` · ${state.sector}`;
+    head.appendChild(meta);
+    head.appendChild(h("span", "meta note", `Implied is the at-the-money vol of the nearest monthly expiration with at least five days left. ER marks an earnings date inside it; JUMP marks a realized figure where one day supplied over half the variance. Snapshot from the last data refresh.`));
+    root.appendChild(head);
+    const list = h("div", "list"); list.style.overflow = "visible"; root.appendChild(list);
+    const cols = h("div", "vcols glass");
+    ["Company", "IV front", { rv20: "RV 20d", rv60: "RV 60d", rv250: "RV 1y" }[win], "Premium", "IV / RV", "Context"].forEach((c) => cols.appendChild(h("span", null, c)));
+    list.appendChild(cols);
+    if (!rows.length) { list.appendChild(h("div", "empty", "Nothing matches. Loosen the filters or switch the realized window.")); return; }
+    const frag = document.createDocumentFragment();
+    for (const r of rows) frag.appendChild(renderVolRow(r, win));
+    list.appendChild(frag);
+  }
+  function premPill(prem, ratio) {
+    const cls = ratio >= 1.15 ? "rich" : ratio <= 0.9 ? "cheap" : "flat";
+    const p = h("span", `pill ${cls} num`, (prem > 0 ? "+" : "") + prem.toFixed(1) + " pts");
+    p.title = "Implied minus realized, in vol points";
+    return p;
+  }
+  function renderVolRow({ s, v, ratio, prem }, win) {
+    const b = h("div", "vrow"); b.setAttribute("role", "button"); b.tabIndex = 0;
+    b.addEventListener("click", () => openDetail(s.t));
+    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(s.t); } });
+    const ident = h("div", "ident");
+    const tkline = h("div", "tkline"); tkline.append(h("span", "tk", s.t), h("span", "sectag", state.sectorShort[s.sector] || s.sector));
+    const nm = h("div", "nm"); nm.appendChild(h("span", "nm-text", s.n)); ident.append(tkline, nm);
+    const iv0 = v.iv[0];
+    const viv = h("div", "num viv"); viv.append(document.createTextNode(fmtVol(iv0.iv)), h("span", "sub", `${fmtDate(iv0.d)} · ${iv0.dte}d`));
+    const vrv = h("div", "num vrv"); vrv.append(document.createTextNode(fmtVol(v[win])), h("span", "sub", v.rv20 != null && win !== "rv20" ? `20d ${fmtVol(v.rv20)}` : v.rv60 != null ? `60d ${fmtVol(v.rv60)}` : ""));
+    const pw = h("div", "pillwrap"); pw.appendChild(premPill(prem, ratio));
+    const vratio = h("div", "num vratio", ratio.toFixed(2) + "×");
+    const ctx = h("div", "vctx");
+    if (iv0.earn) { const f = h("span", "flag er", "ER"); f.title = `Earnings ${s.eps?.nextQ?.d ? fmtDate(s.eps.nextQ.d, true) : ""} falls inside this expiration`; ctx.appendChild(f); }
+    if (v.jump != null && v.jump > 0.5) { const f = h("span", "flag", "JUMP"); f.title = `${Math.round(v.jump * 100)}% of 60-day variance came from a single day`; ctx.appendChild(f); }
+    if (v.pctSec != null) ctx.appendChild(document.createTextNode(`${Math.round(v.pctSec * 100)}th pct in ${state.sectorShort[s.sector] || s.sector}`));
+    const mob = h("div", "mobile-v"); mob.appendChild(premPill(prem, ratio)); mob.appendChild(h("span", "sub num", `IV ${fmtVol(iv0.iv)} · RV ${fmtVol(v[win])}${iv0.earn ? " · ER" : ""}${v.jump > 0.5 ? " · JUMP" : ""}`));
+    b.append(ident, viv, vrv, pw, vratio, ctx, mob);
+    return b;
+  }
+  /** Detail sheet: implied vs realized numbers and a rolling realized-vol chart with implied levels. */
+  function volSection(s, hist) {
+    const v = volRow(s.t);
+    const sec = h("section", "section");
+    sec.appendChild(h("h3", null, "Volatility"));
+    if (!v || !v.iv || !v.iv.length) { sec.appendChild(h("p", "about", "No implied volatility on file for this company.")); return sec; }
+    const iv0 = v.iv[0];
+    const grid = h("div", "vol-stats");
+    grid.append(
+      stat("Implied (front)", fmtVol(iv0.iv), `${fmtDate(iv0.d)} · ${iv0.dte}d${iv0.earn ? " · earnings inside" : ""}`),
+      stat("Realized 60d", fmtVol(v.rv60), `20d ${fmtVol(v.rv20)} · 1y ${fmtVol(v.rv250)}`),
+      stat("Premium", v.prem != null ? (v.prem > 0 ? "+" : "") + v.prem.toFixed(1) + " pts" : "—", v.ratio != null ? `${v.ratio.toFixed(2)}× · ${Math.round((v.pctAll || 0) * 100)}th pct of S&P` : null),
+    );
+    sec.appendChild(grid);
+    if (v.jump != null && v.jump > 0.5) sec.appendChild(h("p", "earn-note", `${Math.round(v.jump * 100)}% of the 60-day realized variance came from a single day, so realized overstates the normal daily range.`));
+    const legend = h("div", "vol-legend");
+    const l1 = h("span"); l1.append(h("i"), document.createTextNode("Rolling 20-day realized vol")); const l2 = h("span"); l2.append(h("i", "iv"), document.createTextNode("Implied vol by expiration"));
+    legend.append(l1, l2); sec.appendChild(legend);
+    const wrap = h("div", "vol-chart chart-wrap"); sec.appendChild(wrap);
+    const closes = (hist.d || []).filter((p) => p[1] != null);
+    const series = [];
+    for (let i = 21; i < closes.length; i++) {
+      const r = []; for (let k = i - 19; k <= i; k++) r.push(Math.log(closes[k][1] / closes[k - 1][1]));
+      const m = r.reduce((a, b) => a + b, 0) / r.length; const va = r.reduce((a, b) => a + (b - m) * (b - m), 0) / (r.length - 1);
+      series.push([closes[i][0], Math.sqrt(va * 252) * 100]);
+    }
+    const levels = v.iv.map((e) => ({ label: `${MONTHS[parseISO(e.d).getMonth()]} ${fmtVol(e.iv)}`, value: e.iv }));
+    const draw = () => Charts.volChart(wrap, series, levels, { fmtDate: (d, long) => long ? fmtDate(d, true) : fmtDate(d) });
+    state.redraws.push(draw); requestAnimationFrame(draw);
+    return sec;
+  }
+
   // ---------- detail sheet ----------
   async function openDetail(t) {
     const s = state.bySym[t]; if (!s) return;
@@ -461,6 +578,7 @@
     const hist = await historyFor(s);
     if (state.open !== t) return;
     if (hist.news && hist.news.length) body.appendChild(newsSection(hist.news));
+    body.insertBefore(volSection(s, hist), optHost);
     optionsFor(s).then((o) => { if (state.open === t) optionsSection(optHost, s, o); });
     const draw = () => {
       let series;
@@ -674,16 +792,18 @@
   // ---------- view switching ----------
   function setView(v) {
     state.view = v;
-    $("#list").hidden = v !== "markets"; $("#table").hidden = v !== "table"; $("#screener").hidden = v !== "screener"; $("#list-head").hidden = v === "screener";
+    $("#list").hidden = v !== "markets"; $("#table").hidden = v !== "table"; $("#screener").hidden = v !== "screener"; $("#vol").hidden = v !== "vol"; $("#list-head").hidden = v === "screener" || v === "vol";
     $$("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
-    $("#subchips").hidden = v === "screener" || !state.sector;
+    $("#subchips").hidden = v === "screener" || v === "vol" || !state.sector;
     if (v === "screener") renderScreener();
     if (v === "table") renderTable();
+    if (v === "vol") renderVol();
   }
   function renderAll() {
     renderRail(); renderChips(); renderList();
     if (state.view === "screener") renderScreener();
     if (state.view === "table") renderTable();
+    if (state.view === "vol") renderVol();
   }
   function svgIcon(name) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "2"); svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
@@ -722,7 +842,7 @@
     sheet.addEventListener("touchmove", (e) => { if (y0 != null && e.touches[0].clientY - y0 > 90 && window.innerWidth < 700) { y0 = null; closeDetail(); } }, { passive: true });
     setView("markets"); renderAll();
     const hash = decodeURIComponent(location.hash.slice(1)).toUpperCase();
-    if (hash === "SCREENER") setView("screener"); else if (hash === "TABLE") setView("table"); else if (state.bySym[hash]) openDetail(hash);
+    if (hash === "SCREENER") setView("screener"); else if (hash === "TABLE") setView("table"); else if (hash === "VOL") setView("vol"); else if (state.bySym[hash]) openDetail(hash);
   }
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", boot) : boot();
 })();

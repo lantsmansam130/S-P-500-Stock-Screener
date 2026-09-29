@@ -179,5 +179,53 @@
   }
   function fmtEps(v) { return (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2); }
 
-  global.Charts = { sparkline, priceChart, earningsChart };
+  /** Rolling realized vol line with dashed horizontal implied-vol levels.
+      series: [[dateISO, vol%]], levels: [{label, value}]. */
+  function volChart(container, series, levels, opts = {}) {
+    container.replaceChildren();
+    const W = widthOf(container), H = 200, small = W < 440, padL = 34, padR = small ? 48 : 64, padT = 12, padB = 22;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img" }, container);
+    const tip = document.createElement("div"); tip.className = "tip"; container.appendChild(tip);
+    const pts = (series || []).filter((p) => p[1] != null);
+    if (pts.length < 2) { el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", fill: "var(--fg-3)", "font-size": 13 }, svg).textContent = "Not enough history"; return; }
+    const vals = pts.map((p) => p[1]).concat(levels.map((l) => l.value).filter((v) => v != null));
+    let min = 0, max = Math.max(...vals) * 1.12 || 10;
+    const x = scale(0, pts.length - 1, padL, W - padR), y = scale(min, max, H - padB, padT);
+    const step = niceStep((max - min) / 4);
+    for (let t = 0; t <= max; t += step) {
+      el("line", { x1: padL, x2: W - padR, y1: y(t), y2: y(t), stroke: "var(--hairline)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }, svg);
+      el("text", { x: padL - 6, y: y(t) + 4, "text-anchor": "end", fill: "var(--fg-3)", "font-size": 10.5, "font-family": "inherit" }, svg).textContent = t.toFixed(0) + "%";
+    }
+    const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(p[1]).toFixed(2)}`).join("");
+    el("path", { d, fill: "none", stroke: "var(--fg-2)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }, svg);
+    // implied levels, labels stacked apart if they collide
+    const placed = [];
+    levels.filter((l) => l.value != null).sort((a, b) => b.value - a.value).forEach((l) => {
+      const yy = y(l.value);
+      el("line", { x1: padL, x2: W - padR, y1: yy, y2: yy, stroke: "var(--accent)", "stroke-width": 1.5, "stroke-dasharray": "4 4", "vector-effect": "non-scaling-stroke" }, svg);
+      let ly = yy + 4; while (placed.some((p) => Math.abs(p - ly) < 12)) ly += 12; placed.push(ly);
+      el("text", { x: W - padR + 6, y: ly, fill: "var(--accent)", "font-size": 10.5, "font-weight": 600, "font-family": "inherit" }, svg).textContent = l.label;
+    });
+    const fmtD = opts.fmtDate || ((s) => s);
+    [0, Math.floor((pts.length - 1) / 2), pts.length - 1].forEach((i, k) => {
+      el("text", { x: x(i), y: H - 6, "text-anchor": k === 0 ? "start" : k === 1 ? "middle" : "end", fill: "var(--fg-3)", "font-size": 10.5, "font-family": "inherit" }, svg).textContent = fmtD(pts[i][0]);
+    });
+    const cross = el("g", { style: "display:none" }, svg);
+    const vline = el("line", { y1: padT, y2: H - padB, stroke: "var(--fg-2)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }, cross);
+    el("circle", { r: 6, fill: "var(--bg)" }, cross); const dot = el("circle", { r: 4, fill: "var(--fg)" }, cross); const ring = cross.children[1];
+    const move = (clientX) => {
+      const r = svg.getBoundingClientRect();
+      const i = Math.max(0, Math.min(pts.length - 1, Math.round(((clientX - r.left) / r.width) * (pts.length - 1))));
+      const px = x(i), py = y(pts[i][1]);
+      cross.style.display = ""; vline.setAttribute("x1", px); vline.setAttribute("x2", px);
+      dot.setAttribute("cx", px); dot.setAttribute("cy", py); ring.setAttribute("cx", px); ring.setAttribute("cy", py);
+      tip.style.display = "block"; tip.style.left = Math.max(60, Math.min(r.width - 60, (px / W) * r.width)) + "px";
+      tip.replaceChildren(); const b = document.createElement("b"); b.textContent = pts[i][1].toFixed(1) + "% realized"; const dd = document.createElement("span"); dd.className = "d"; dd.textContent = fmtD(pts[i][0], true); tip.append(b, dd);
+    };
+    const leave = () => { cross.style.display = "none"; tip.style.display = "none"; };
+    svg.addEventListener("pointermove", (e) => move(e.clientX)); svg.addEventListener("pointerdown", (e) => move(e.clientX));
+    svg.addEventListener("pointerleave", leave); svg.addEventListener("pointerup", leave); svg.addEventListener("pointercancel", leave);
+  }
+
+  global.Charts = { sparkline, priceChart, earningsChart, volChart };
 })(window);
