@@ -257,6 +257,8 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2
 .result-head h3 { margin: 0; font-size: 17px; }
 .result-head .meta { color: var(--fg-3); font-size: 13px; }
 .result-head .meta b { color: var(--fg); font-weight: 600; }
+.result-head .note { width: 100%; font-size: 12.5px; }
+.ctrl .seg { flex-wrap: wrap; }
 
 /* ---------- detail sheet ---------- */
 .scrim { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.35); opacity: 0; pointer-events: none; transition: opacity .25s; }

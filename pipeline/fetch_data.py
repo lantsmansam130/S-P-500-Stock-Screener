@@ -87,6 +87,18 @@ def download_closes(tickers, days, interval) -> pd.DataFrame:
     raise RuntimeError("price download failed")
 
 
+def since_earnings(closes: pd.Series, report_date: str | None, price) -> float | None:
+    """Percent move from the last close strictly before the most recent earnings
+    report to the current price, so the earnings-day reaction is included."""
+    if not report_date or closes is None or len(closes) == 0 or not price:
+        return None
+    idx = closes.index.tz_localize(None) if getattr(closes.index, "tz", None) is not None else closes.index
+    prior = closes[idx < pd.Timestamp(report_date)]
+    if prior.empty or not prior.iloc[-1]:
+        return None
+    return num((price / float(prior.iloc[-1]) - 1) * 100)
+
+
 def fiscal_quarter_label(report_dt: pd.Timestamp, fye_month: int | None) -> tuple[str, str]:
     """Return (label, quarter_end 'YYYY-MM') for the quarter a report covers.
 
@@ -316,6 +328,9 @@ def main():
                 rets[k] = num((price / closes[-1 - n] - 1) * 100) if price else None
             else:
                 rets[k] = None
+        last_q = (f.get("eps") or {}).get("q") or []
+        earn_date = last_q[-1]["d"] if last_q else None
+        rets["earn"] = since_earnings(d, earn_date, price)
         row = {
             "t": r.symbol, "n": r.name, "sector": r.sector, "group": r.group, "sub": r.sub,
             "hq": r.hq if isinstance(r.hq, str) else None,
@@ -325,7 +340,7 @@ def main():
             "chg": num(price - prev) if price and prev else None,
             "chgPct": rets["1d"],
             "mcap": f.get("mcap"), "ipo": f.get("ipo"),
-            "ret": rets,
+            "ret": rets, "earnDate": earn_date,
             "spark": closes[-30:],
             "val": f.get("val", {}),
             "eps": f.get("eps", {}),

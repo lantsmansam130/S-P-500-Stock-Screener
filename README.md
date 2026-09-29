@@ -43,7 +43,7 @@ python -m http.server 8000 --directory app   # then open http://localhost:8000
 ## Daily screen rules
 
 Edit `screener.config.json`. Each rule has a `window` (`1d`, `1w`, `1m`, `3m`,
-`6m`, `1y`), a `threshold_pct` (positive magnitude) and a `direction` (`up`,
+`6m`, `1y`, or `earn` for the move since the close before the last earnings report), a `threshold_pct` (positive magnitude) and a `direction` (`up`,
 `down`, `either`). The workflow writes the hits to `app/data/alerts.json` each
 run, and the Screener tab shows the same rules as one-tap presets whose counts
 are computed live, so you can also tune the threshold and time frame in the UI

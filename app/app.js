@@ -5,8 +5,8 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const WINDOW_LABEL = { "1d": "Today", "1w": "1 week", "1m": "1 month", "3m": "3 months", "6m": "6 months", "1y": "1 year" };
-  const WINDOW_SHORT = { "1d": "1D", "1w": "1W", "1m": "1M", "3m": "3M", "6m": "6M", "1y": "1Y" };
+  const WINDOW_LABEL = { "1d": "Today", "1w": "1 week", "1m": "1 month", "3m": "3 months", "6m": "6 months", "1y": "1 year", "earn": "Since last earnings" };
+  const WINDOW_SHORT = { "1d": "1D", "1w": "1W", "1m": "1M", "3m": "3M", "6m": "6M", "1y": "1Y", "earn": "Since earnings" };
   const RANGE_DAYS = { "1W": 5, "1M": 21, "3M": 63, "6M": 126, "1Y": 252 };
   const DEFAULT_RULES = [
     { id: "daily-mover", label: "Moved 4%+ today", window: "1d", threshold_pct: 4, direction: "either" },
@@ -309,15 +309,21 @@
     const head = $("#result-head"); head.replaceChildren();
     const dirTxt = direction === "up" ? "up" : direction === "down" ? "down" : "up or down";
     head.appendChild(h("h3", null, `${rows.length} ${rows.length === 1 ? "stock" : "stocks"}`));
-    const meta = h("span", "meta"); meta.append(document.createTextNode(`moved ${dirTxt} `), (() => { const b = h("b", "num", `${threshold}%+`); return b; })(), document.createTextNode(` over ${WINDOW_LABEL[w].toLowerCase()}${state.sector ? " · " + state.sector : ""}`));
+    const over = w === "earn" ? "since last earnings" : w === "1d" ? "today" : `over ${WINDOW_LABEL[w].toLowerCase()}`;
+    const meta = h("span", "meta"); meta.append(document.createTextNode(`moved ${dirTxt} `), h("b", "num", `${threshold}%+`), document.createTextNode(` ${over}${state.sector ? " · " + state.sector : ""}`));
     head.appendChild(meta);
+    if (w === "earn") head.appendChild(h("span", "meta note", "Measured from the last close before each company's most recent earnings report, so the earnings-day reaction is included."));
     const list = $("#screenlist"); list.replaceChildren();
     const cols = h("div", "cols glass");
-    ["Company", "Industry group", "30 days", "Mkt cap", "Price", WINDOW_SHORT[w]].forEach((c) => cols.appendChild(h("span", null, c)));
+    ["Company", "Industry group", "30 days", "Mkt cap", "Price", w === "earn" ? "Since ER" : WINDOW_SHORT[w]].forEach((c) => cols.appendChild(h("span", null, c)));
     list.appendChild(cols);
     if (!rows.length) { list.appendChild(h("div", "empty", "Nothing crossed that threshold. Lower the minimum move or widen the time frame.")); return; }
     const frag = document.createDocumentFragment();
-    for (const s of rows) frag.appendChild(renderRow(s, w));
+    for (const s of rows) {
+      const row = renderRow(s, w);
+      if (w === "earn" && s.earnDate) row.querySelector(".nm").textContent = `${s.n} · reported ${fmtDate(s.earnDate, true)}`;
+      frag.appendChild(row);
+    }
     list.appendChild(frag);
   }
   function saveScreen() { try { localStorage.setItem("sp500.screen", JSON.stringify(state.screen)); } catch (_) { /* ignore */ } }
