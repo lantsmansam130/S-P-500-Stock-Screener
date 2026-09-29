@@ -350,6 +350,11 @@
       stat("Market cap", fmtCap(s.mcap)),
       stat("P/E (TTM)", fmtX(v.pe), v.epsTtm != null ? `EPS ${fmtSigned(v.epsTtm).replace("+", "")}` : null),
       stat("Fwd P/E", fmtX(v.fpe), v.epsFwd != null ? `Fwd EPS $${v.epsFwd.toFixed(2)}` : null),
+    );
+    sec.appendChild(grid);
+    // the rest lives behind a disclosure so the sheet stays focused
+    const more = h("div", "stats more"); more.id = "more-stats";
+    more.append(
       stat("P/S", fmtX(v.ps), v.revGrowth != null ? `Rev growth ${fmtPct(v.revGrowth * 100)}` : null),
       stat("P/B", fmtX(v.pb)),
       stat("EV / EBITDA", fmtX(v.evEbitda), v.margin != null ? `Net margin ${(v.margin * 100).toFixed(1)}%` : null),
@@ -366,9 +371,22 @@
       const pos = Math.max(0, Math.min(100, ((s.price - v.lo52) / (v.hi52 - v.lo52 || 1)) * 100));
       knob.style.left = pos + "%"; track.appendChild(knob);
       rng.append(h("span", "num", fmtPrice(v.lo52)), track, h("span", "num", fmtPrice(v.hi52)));
-      w.appendChild(rng); grid.appendChild(w);
+      w.appendChild(rng); more.appendChild(w);
     }
-    sec.appendChild(grid); return sec;
+    let expanded = false;
+    try { expanded = localStorage.getItem("sp500.moreStats") === "1"; } catch (_) { /* ignore */ }
+    const toggle = h("button", "disclose"); toggle.type = "button"; toggle.setAttribute("aria-controls", more.id);
+    const chev = svgIcon("chev"); chev.classList.add("chev");
+    const label = h("span");
+    const apply = () => {
+      more.hidden = !expanded; toggle.setAttribute("aria-expanded", String(expanded));
+      label.textContent = expanded ? "Fewer stats" : `More stats (${more.children.length})`;
+    };
+    toggle.append(label, chev);
+    toggle.addEventListener("click", () => { expanded = !expanded; apply(); try { localStorage.setItem("sp500.moreStats", expanded ? "1" : "0"); } catch (_) { /* ignore */ } });
+    apply();
+    sec.append(toggle, more);
+    return sec;
   }
   function earningsSection(s) {
     const e = s.eps || {};
