@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>S&amp;P 500 Screener</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 rx=%277%27 fill=%27%235ea3ff%27/%3E%3Cpath d=%27M4 17l5-6 4 4 4-7 4 4%27 fill=%27none%27 stroke=%27white%27 stroke-width=%272.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!--ARTIFACT-START-->
+<div class="app">
+  <header class="topbar glass">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 4-7 5 5"/></svg></div>
+      <div><h1>S&amp;P 500 Screener</h1><p class="asof" id="asof">Loading…</p></div>
+    </div>
+    <div class="seg glass view" role="tablist" aria-label="View">
+      <button type="button" data-view="markets" aria-pressed="true">Markets</button>
+      <button type="button" data-view="screener" aria-pressed="false">Screener</button>
+    </div>
+    <label class="search glass">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="search" type="search" placeholder="Search ticker or company" autocomplete="off" spellcheck="false" aria-label="Search ticker or company">
+      <button type="button" class="clear" id="clear" aria-label="Clear search"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </label>
+  </header>
+  <div class="main">
+    <nav class="rail" id="rail" aria-label="Sectors"></nav>
+    <section class="content">
+      <div class="chips" id="chips" role="group" aria-label="Sector filter"></div>
+      <div class="chips sub" id="subchips" role="group" aria-label="Industry group filter" hidden></div>
+      <div class="list-head" id="list-head">
+        <div class="crumb" id="crumb"></div>
+        <div class="controls">
+          <span class="sort-label">Sort</span>
+          <div class="seg glass small" id="sortseg" aria-label="Sort by">
+            <button type="button" data-key="mcap" aria-pressed="true">Mkt cap</button>
+            <button type="button" data-key="chg" aria-pressed="false">Today</button>
+            <button type="button" data-key="m1" aria-pressed="false">1M</button>
+            <button type="button" data-key="name" aria-pressed="false">Name</button>
+          </div>
+        </div>
+      </div>
+      <div class="list" id="list"><div class="loading"><div class="spinner"></div><span>Loading S&amp;P 500…</span></div></div>
+      <div id="screener" class="screener list" hidden></div>
+    </section>
+  </div>
+  <nav class="tabbar glass" aria-label="Views">
+    <button type="button" data-view="markets" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 4-7 5 5"/></svg>Markets</button>
+    <button type="button" data-view="screener" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>Screener</button>
+  </nav>
+</div>
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-nm" aria-hidden="true">
+  <div class="grabber" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <div class="who">
+      <div class="tk" id="sheet-tk"></div>
+      <div class="nm" id="sheet-nm"></div>
+      <div class="path" id="sheet-path"></div>
+    </div>
+    <button type="button" class="iconbtn" id="close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="sheet-body" id="sheet-body"></div>
+</aside>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+<!--ARTIFACT-END-->
+</body>
+</html>

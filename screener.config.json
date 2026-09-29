@@ -1,0 +1,8 @@
+{
+  "_comment": "Daily price-move screens. window: 1d | 1w | 1m | 3m | 6m | 1y. direction: up | down | either. threshold_pct is a positive magnitude.",
+  "rules": [
+    { "id": "daily-mover",     "label": "Moved 4%+ today",        "window": "1d", "threshold_pct": 4,  "direction": "either" },
+    { "id": "weekly-breakout", "label": "Up 10%+ over the week",   "window": "1w", "threshold_pct": 10, "direction": "up" },
+    { "id": "monthly-slide",   "label": "Down 15%+ over the month", "window": "1m", "threshold_pct": 15, "direction": "down" }
+  ]
+}

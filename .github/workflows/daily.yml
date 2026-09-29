@@ -1,0 +1,51 @@
+name: Daily data refresh
+
+on:
+  schedule:
+    # 22:15 UTC on weekdays: after the US close, before Yahoo's overnight maintenance.
+    - cron: "15 22 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r pipeline/requirements.txt
+      - name: Fetch S&P 500 data
+        run: python pipeline/fetch_data.py --workers 6
+      - name: Run daily price screens
+        run: python pipeline/screen.py
+      - name: Commit refreshed data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/data
+          git diff --cached --quiet || git commit -m "data: refresh $(date -u +%Y-%m-%d)"
+          git push
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app
+
+  deploy:
+    needs: refresh
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
