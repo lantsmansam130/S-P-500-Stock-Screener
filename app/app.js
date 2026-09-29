@@ -265,6 +265,12 @@
   /** Trailing P/E minus forward P/E: positive when the multiple compresses on next year's earnings. */
   const peDiff = (s) => (s.val?.pe != null && s.val?.fpe != null) ? s.val.pe - s.val.fpe : null;
   const fmtDiff = (d) => d == null ? "—" : (d > 0 ? "+" : "") + d.toFixed(1) + "×";
+  /** Simple average multiple across the companies that have a positive one (loss-makers have no P/E). */
+  function avgMultiple(rows, key) {
+    let sum = 0, n = 0;
+    for (const s of rows) { const m = s.val?.[key]; if (m != null && m > 0) { sum += m; n++; } }
+    return n ? sum / n : null;
+  }
 
   // ---------- rendering: table (by sector) ----------
   let tblCollapsed = {};
@@ -281,6 +287,7 @@
       if (key) {
         const b = h("button", "th-btn", label); b.type = "button";
         if (key === "pediff") b.title = "Trailing P/E minus forward P/E. Positive means the multiple is lower on next year's expected earnings.";
+        if (key === "pe" || key === "fpe") b.title = "Sector and index rows show the simple average across companies with a positive multiple.";
         if (state.sort.key === key) { b.setAttribute("aria-sort", state.sort.dir < 0 ? "descending" : "ascending"); b.appendChild(h("span", "arrow", state.sort.dir < 0 ? "↓" : "↑")); }
         b.addEventListener("click", () => { if (state.sort.key === key) state.sort.dir *= -1; else state.sort = { key, dir: -1 }; renderTable(); syncSortSeg(); });
         th.appendChild(b);
@@ -288,18 +295,18 @@
       hr.appendChild(th);
     }
     thead.appendChild(hr); table.appendChild(thead);
+    if (!state.sector && rows.length) {
+      const all = h("tbody"); all.appendChild(groupRow({ name: "S&P 500 average", rows, chg: capWeighted(rows), summary: true })); table.appendChild(all);
+    }
     let shown = 0;
     for (const sec of state.data.sectors) {
       const secRows = rows.filter((s) => s.sector === sec.name);
       if (!secRows.length) continue;
       const tbody = h("tbody");
       const collapsed = !!tblCollapsed[sec.name];
-      const sr = h("tr", "sec-row"); const td = h("td"); td.colSpan = cols.length;
-      const btn = h("button", "sec-btn"); btn.type = "button"; btn.setAttribute("aria-expanded", String(!collapsed));
-      const chev = svgIcon("chev"); chev.classList.add("chev");
-      btn.append(chev, h("span", "sec-name", sec.name), h("span", "cnt num", String(secRows.length)), chgSpan(sec.chg));
-      btn.addEventListener("click", () => { tblCollapsed[sec.name] = !tblCollapsed[sec.name]; try { localStorage.setItem("sp500.tblCollapsed", JSON.stringify(tblCollapsed)); } catch (_) { /* ignore */ } renderTable(); });
-      td.appendChild(btn); sr.appendChild(td); tbody.appendChild(sr);
+      tbody.appendChild(groupRow({ name: sec.name, rows: secRows, chg: sec.chg, collapsed, onToggle: () => {
+        tblCollapsed[sec.name] = !tblCollapsed[sec.name]; try { localStorage.setItem("sp500.tblCollapsed", JSON.stringify(tblCollapsed)); } catch (_) { /* ignore */ } renderTable();
+      } }));
       if (!collapsed) {
         for (const s of secRows) {
           const tr = h("tr", "stk"); tr.tabIndex = 0; tr.setAttribute("role", "button");
@@ -320,6 +327,25 @@
     }
     wrap.appendChild(table); root.appendChild(wrap);
     if (!rows.length) root.appendChild(h("div", "empty", "No companies match."));
+  }
+  /** Sector (or index) header row: name, count and day change under Company; averages under the multiple columns. */
+  function groupRow({ name, rows, chg, collapsed, onToggle, summary }) {
+    const tr = h("tr", "sec-row" + (summary ? " summary" : ""));
+    const c1 = h("td", "co");
+    const btn = h(summary ? "div" : "button", "sec-btn");
+    if (!summary) { btn.type = "button"; btn.setAttribute("aria-expanded", String(!collapsed)); btn.addEventListener("click", onToggle); const chev = svgIcon("chev"); chev.classList.add("chev"); btn.appendChild(chev); }
+    const meta = h("span", "sec-meta"); meta.append(h("span", "cnt num", String(rows.length)), chgSpan(chg));
+    btn.append(h("span", "sec-name", name), meta);
+    c1.appendChild(btn);
+    const pe = avgMultiple(rows, "pe"), fpe = avgMultiple(rows, "fpe");
+    const d = pe != null && fpe != null ? pe - fpe : null;
+    const cell = (txt, extra = "") => { const td = h("td", "num avg " + extra); td.appendChild(h("span", "avg-l", "avg ")); td.appendChild(document.createTextNode(txt)); return td; };
+    const c2 = h("td", "num");
+    const c3 = cell(fmtX(pe)), c4 = cell(fmtX(fpe));
+    const c5 = h("td", "num"); c5.appendChild(h("span", `pill ${tone(d)}`, fmtDiff(d)));
+    const c6 = h("td", "num wide", fmtCap(rows.reduce((a, s) => a + (s.mcap || 0), 0)));
+    tr.append(c1, c2, c3, c4, c5, c6);
+    return tr;
   }
   function syncSortSeg() { $$("#sortseg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.key === state.sort.key))); }
 
