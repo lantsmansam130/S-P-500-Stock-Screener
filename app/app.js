@@ -55,6 +55,7 @@
     if (!res.ok) throw new Error("stocks.json " + res.status);
     state.data = await res.json();
     state.bySym = Object.fromEntries(state.data.stocks.map((s) => [s.t, s]));
+    state.sectorShort = Object.fromEntries(state.data.sectors.map((s) => [s.name, s.short]));
     for (const sec of state.data.sectors) {
       const rows = state.data.stocks.filter((s) => s.sector === sec.name);
       sec.chg = capWeighted(rows);
@@ -169,7 +170,9 @@
   // ---------- rendering: list ----------
   function renderRow(s, pctKey) {
     const b = h("button", "row"); b.type = "button"; b.dataset.t = s.t;
-    const ident = h("div", "ident"); ident.append(h("div", "tk", s.t), h("div", "nm", s.n));
+    const ident = h("div", "ident");
+    const tkline = h("div", "tkline"); tkline.append(h("span", "tk", s.t), h("span", "sectag", state.sectorShort[s.sector] || s.sector));
+    ident.append(tkline, h("div", "nm", s.n));
     const sec = h("div", "sec", state.group ? s.sub : s.group);
     const spark = Charts.sparkline(s.spark);
     const mcap = h("div", "mcap num", fmtCap(s.mcap));
