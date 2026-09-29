@@ -167,6 +167,7 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2
 /* ---------- chips (tablet / phone sector filter) ---------- */
 .chips { display: none; min-width: 0; gap: 8px; overflow-x: auto; padding: 10px 16px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .chips::-webkit-scrollbar { display: none; }
+.chips { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); padding-right: 40px; }
 .chip {
   flex: none; padding: 7px 13px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--fg-2);
   background: var(--glass); border: 1px solid var(--glass-border); display: inline-flex; align-items: center; gap: 6px;
@@ -333,7 +334,7 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2
 .err { color: var(--down); }
 
 /* ---------- tablet ---------- */
-@media (max-width: 1023px) {
+@media (max-width: 1199px) {
   .main { grid-template-columns: minmax(0, 1fr); }
   .rail { display: none; }
   .chips { display: flex; }
@@ -387,6 +388,18 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stat.wide { grid-column: span 2; }
   .chart-wrap svg { height: 190px; }
+}
+/* ---------- touch screens: 44px-class targets ---------- */
+@media (pointer: coarse) {
+  .seg button { padding: 8px 14px; min-height: 36px; }
+  .seg.small button { padding: 7px 12px; min-height: 34px; }
+  .chip { padding: 9px 14px; min-height: 38px; }
+  .iconbtn { width: 38px; height: 38px; }
+  .rail-item { padding: 10px 10px; }
+  .preset { padding: 9px 14px; min-height: 38px; }
+  .disclose { padding: 9px 14px; min-height: 38px; }
+  .slider-row input[type="range"] { height: 32px; }
+  .news-item { padding: 12px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

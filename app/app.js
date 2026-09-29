@@ -535,6 +535,9 @@
     setAsOf();
     $("#refresh").addEventListener("click", refreshAll);
     const search = $("#search");
+    const narrow = window.matchMedia("(max-width: 899px)");
+    const setPlaceholder = () => { search.placeholder = narrow.matches ? "Search" : "Search ticker or company"; };
+    setPlaceholder(); narrow.addEventListener("change", setPlaceholder);
     search.addEventListener("input", () => { state.query = search.value; search.parentElement.classList.toggle("has-value", !!search.value); renderList(); });
     $("#clear").addEventListener("click", () => { search.value = ""; state.query = ""; search.parentElement.classList.remove("has-value"); renderList(); search.focus(); });
     $$("[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));

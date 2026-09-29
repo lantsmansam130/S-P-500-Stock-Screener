@@ -5,6 +5,9 @@ on:
     # 22:15 UTC on weekdays: after the US close, before Yahoo's overnight maintenance.
     - cron: "15 22 * * 1-5"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["app/**", "pipeline/**", ".github/workflows/daily.yml"]
 
 permissions:
   contents: write
