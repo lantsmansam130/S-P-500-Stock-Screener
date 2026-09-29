@@ -231,11 +231,6 @@
     const pillwrap = h("div", "pillwrap"); pillwrap.appendChild(pill(pct));
     const mobile = h("div", "mobile-px"); mobile.append(h("span", "px num", fmtPrice(s.price)), pill(pct));
     b.append(ident, sec, spark, mcap, px, pillwrap, mobile);
-    if (s.news && s.news.u) {
-      const a = newsLink(s.news, "news"); a.title = s.news.t;
-      a.append(h("span", "hl", s.news.t), h("span", "src", `${s.news.p ? s.news.p + " · " : ""}${ago(s.news.d)}`));
-      b.appendChild(a);
-    }
     b.addEventListener("click", () => openDetail(s.t));
     return b;
   }
