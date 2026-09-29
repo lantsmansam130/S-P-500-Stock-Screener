@@ -15,7 +15,7 @@
   ];
 
   const state = {
-    data: null, rules: DEFAULT_RULES, history: {}, view: "markets",
+    data: null, rules: DEFAULT_RULES, history: {}, options: {}, view: "markets",
     sector: null, group: null, sub: null, query: "", sort: { key: "mcap", dir: -1 },
     screen: { window: "1d", direction: "either", threshold: 4 },
     open: null, range: "1M", earnMode: "q",
@@ -76,7 +76,7 @@
       for (const g of sec.groups) g.chg = capWeighted(rows.filter((s) => s.group === g.name));
     }
     try { const r = await fetch("data/alerts.json", { cache: force ? "reload" : "no-cache" }); if (r.ok) { const a = await r.json(); if (a.rules?.length) state.rules = a.rules; } } catch (_) { /* optional */ }
-    if (force) state.history = {};
+    if (force) { state.history = {}; state.options = {}; }
   }
   function setAsOf() {
     const asOf = new Date(state.data.asOf);
@@ -118,6 +118,14 @@
     return bundle[stock.t] || { d: [], w: [] };
   }
 
+  const sectorSlug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  async function optionsFor(stock) {
+    const slug = sectorSlug(stock.sector);
+    if (!state.options[slug]) state.options[slug] = fetch(`data/options/${slug}.json`).then((r) => r.ok ? r.json() : { chains: {} }).catch(() => ({ chains: {} }));
+    const bundle = await state.options[slug];
+    return { asOf: bundle.asOf, chain: (bundle.chains || {})[stock.t] || { spot: stock.price, exps: [] } };
+  }
+
   // ---------- filtering / sorting ----------
   function visibleStocks() {
     const q = state.query.trim().toLowerCase();
@@ -125,7 +133,7 @@
       (!state.sector || s.sector === state.sector) && (!state.group || s.group === state.group) && (!state.sub || s.sub === state.sub) &&
       (!q || s.t.toLowerCase().includes(q) || s.n.toLowerCase().includes(q)));
     const { key, dir } = state.sort;
-    const val = (s) => key === "name" ? s.n : key === "chg" ? s.chgPct : key === "m1" ? s.ret?.["1m"] : s.mcap;
+    const val = (s) => key === "name" ? s.n : key === "chg" ? s.chgPct : key === "m1" ? s.ret?.["1m"] : key === "fpe" ? s.val?.fpe : key === "pe" ? s.val?.pe : s.mcap;
     rows.sort((a, b) => {
       const va = val(a), vb = val(b);
       if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1;
@@ -195,7 +203,7 @@
     for (const sec of state.data.sectors) wrap.appendChild(mk(sec.short, sec.chg, state.sector === sec.name, () => setFilter(state.sector === sec.name ? null : sec.name, null, null)));
     const subWrap = $("#subchips"); subWrap.replaceChildren();
     const sec = state.data.sectors.find((s) => s.name === state.sector);
-    subWrap.hidden = !sec || state.view !== "markets";
+    subWrap.hidden = !sec || state.view === "screener";
     if (sec) {
       subWrap.appendChild(mk("All " + sec.short, null, !state.group, () => setFilter(sec.name, null, null)));
       for (const g of sec.groups) subWrap.appendChild(mk(g.name, null, state.group === g.name, () => setFilter(sec.name, state.group === g.name ? null : g.name, null)));
@@ -258,6 +266,61 @@
     // sort buttons
     $$("#sortseg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.key === state.sort.key)));
   }
+
+  // ---------- rendering: table (by sector) ----------
+  let tblCollapsed = {};
+  try { tblCollapsed = JSON.parse(localStorage.getItem("sp500.tblCollapsed") || "{}"); } catch (_) { /* per-viewer convenience */ }
+  function renderTable() {
+    const root = $("#table"); root.replaceChildren();
+    const rows = visibleStocks();
+    const wrap = h("div", "tbl-wrap");
+    const table = h("table", "tbl");
+    const thead = h("thead"); const hr = h("tr");
+    const cols = [["Company", null, ""], ["Price", null, "num"], ["Today", "chg", "num"], ["Fwd P/E", "fpe", "num"], ["P/E (TTM)", "pe", "num wide"], ["Mkt cap", "mcap", "num wide"]];
+    for (const [label, key, cls] of cols) {
+      const th = h("th", cls); th.scope = "col";
+      if (key) {
+        const b = h("button", "th-btn", label); b.type = "button";
+        if (state.sort.key === key) { b.setAttribute("aria-sort", state.sort.dir < 0 ? "descending" : "ascending"); b.appendChild(h("span", "arrow", state.sort.dir < 0 ? "↓" : "↑")); }
+        b.addEventListener("click", () => { if (state.sort.key === key) state.sort.dir *= -1; else state.sort = { key, dir: -1 }; renderTable(); syncSortSeg(); });
+        th.appendChild(b);
+      } else th.textContent = label;
+      hr.appendChild(th);
+    }
+    thead.appendChild(hr); table.appendChild(thead);
+    let shown = 0;
+    for (const sec of state.data.sectors) {
+      const secRows = rows.filter((s) => s.sector === sec.name);
+      if (!secRows.length) continue;
+      const tbody = h("tbody");
+      const collapsed = !!tblCollapsed[sec.name];
+      const sr = h("tr", "sec-row"); const td = h("td"); td.colSpan = cols.length;
+      const btn = h("button", "sec-btn"); btn.type = "button"; btn.setAttribute("aria-expanded", String(!collapsed));
+      const chev = svgIcon("chev"); chev.classList.add("chev");
+      btn.append(chev, h("span", "sec-name", sec.name), h("span", "cnt num", String(secRows.length)), chgSpan(sec.chg));
+      btn.addEventListener("click", () => { tblCollapsed[sec.name] = !tblCollapsed[sec.name]; try { localStorage.setItem("sp500.tblCollapsed", JSON.stringify(tblCollapsed)); } catch (_) { /* ignore */ } renderTable(); });
+      td.appendChild(btn); sr.appendChild(td); tbody.appendChild(sr);
+      if (!collapsed) {
+        for (const s of secRows) {
+          const tr = h("tr", "stk"); tr.tabIndex = 0; tr.setAttribute("role", "button");
+          const c1 = h("td", "co"); const line = h("div", "tkline"); line.append(h("span", "tk", s.t)); c1.append(line, h("div", "nm", s.n));
+          const c2 = h("td", "num", fmtPrice(s.price));
+          const c3 = h("td", "num"); c3.appendChild(pill(s.chgPct));
+          const c4 = h("td", "num", fmtX(s.val?.fpe));
+          const c5 = h("td", "num wide", fmtX(s.val?.pe));
+          const c6 = h("td", "num wide", fmtCap(s.mcap));
+          tr.append(c1, c2, c3, c4, c5, c6);
+          tr.addEventListener("click", () => openDetail(s.t));
+          tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(s.t); } });
+          tbody.appendChild(tr); shown++;
+        }
+      }
+      table.appendChild(tbody);
+    }
+    wrap.appendChild(table); root.appendChild(wrap);
+    if (!rows.length) root.appendChild(h("div", "empty", "No companies match."));
+  }
+  function syncSortSeg() { $$("#sortseg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.key === state.sort.key))); }
 
   // ---------- rendering: screener ----------
   function renderScreener() {
@@ -351,6 +414,9 @@
     const rangeRet = h("div", "range-ret"); ranges.append(segR, rangeRet); body.appendChild(ranges);
     body.appendChild(statsSection(s));
     body.appendChild(earningsSection(s));
+    const optHost = h("section", "section opt-host"); optHost.appendChild(h("h3", null, "Options"));
+    optHost.appendChild(h("div", "loading small")).appendChild(h("div", "spinner"));
+    body.appendChild(optHost);
     if (s.desc) {
       const sec = h("section", "section"); sec.appendChild(h("h3", null, "About"));
       sec.appendChild(h("p", "about", s.desc.replace(/\s+\S*$/, "") + (s.desc.length >= 600 ? "…" : "")));
@@ -366,6 +432,7 @@
     const hist = await historyFor(s);
     if (state.open !== t) return;
     if (hist.news && hist.news.length) body.appendChild(newsSection(hist.news));
+    optionsFor(s).then((o) => { if (state.open === t) optionsSection(optHost, s, o); });
     const draw = () => {
       let series;
       if (state.range === "5Y") series = hist.w;
@@ -496,6 +563,64 @@
     [["q", "Quarterly"], ["y", "Annual"]].forEach(([m, l]) => { const b = h("button", null, l); b.type = "button"; b.dataset.m = m; b.addEventListener("click", () => { state.earnMode = m; draw(); }); seg.appendChild(b); });
     head.appendChild(seg); sec.append(head, legend, wrap, note); draw(); return sec;
   }
+  // ---------- options ----------
+  const optView = { exp: 0, side: "calls" };
+  function optionsSection(host, s, data) {
+    host.replaceChildren();
+    const chain = data.chain || { exps: [] };
+    const head = h("div", "section-head"); head.appendChild(h("h3", null, "Options"));
+    if (!chain.exps.length) {
+      host.append(head, h("p", "about", "No option chain on file for this company."));
+      return;
+    }
+    if (optView.exp >= chain.exps.length) optView.exp = 0;
+    const segExp = h("div", "seg glass small");
+    chain.exps.forEach((e, i) => {
+      const d = parseISO(e.d); const days = Math.max(0, Math.round((d - new Date()) / 864e5));
+      const b = h("button"); b.type = "button"; b.append(document.createTextNode(`${MONTHS[d.getMonth()]} ${d.getDate()}`), h("span", "days", ` ${days}d`));
+      b.addEventListener("click", () => { optView.exp = i; draw(); }); segExp.appendChild(b);
+    });
+    head.appendChild(segExp);
+    const segSide = h("div", "seg glass small");
+    [["calls", "Calls"], ["puts", "Puts"]].forEach(([k, l]) => { const b = h("button", null, l); b.type = "button"; b.dataset.side = k; b.addEventListener("click", () => { optView.side = k; draw(); }); segSide.appendChild(b); });
+    const summary = h("div", "opt-summary");
+    const wrap = h("div", "opt-wrap");
+    const foot = h("div", "opt-foot");
+    host.append(head, segSide, summary, wrap, foot);
+    const spot = chain.spot || s.price;
+    const draw = () => {
+      $$("button", segExp).forEach((b, i) => b.setAttribute("aria-pressed", String(i === optView.exp)));
+      $$("button", segSide).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.side === optView.side)));
+      const exp = chain.exps[optView.exp];
+      const rows = exp[optView.side] || [];
+      const other = exp[optView.side === "calls" ? "puts" : "calls"] || [];
+      const nearest = (arr) => arr.reduce((best, r) => (best == null || Math.abs(r[0] - spot) < Math.abs(best[0] - spot) ? r : best), null);
+      const atm = nearest(rows), atmOther = nearest(other);
+      summary.replaceChildren();
+      summary.append(h("span", null, "Spot "), h("b", "num", fmtPrice(spot)));
+      if (atm) summary.append(document.createTextNode(" · ATM "), h("b", "num", `${fmtPrice(atm[0]).replace(".00", "")} ${optView.side === "calls" ? "call" : "put"} ${fmtPrice(atm[1])}`));
+      if (atmOther) summary.append(document.createTextNode(` · ${optView.side === "calls" ? "put" : "call"} `), h("b", "num", fmtPrice(atmOther[1])));
+      if (atm && atm[6] != null) summary.append(document.createTextNode(" · IV "), h("b", "num", (atm[6] * 100).toFixed(0) + "%"));
+      wrap.replaceChildren();
+      if (!rows.length) { wrap.appendChild(h("div", "empty", "No strikes on file for this expiration.")); return; }
+      const table = h("table", "opt");
+      const thead = h("thead"); const hr = h("tr");
+      ["Strike", "Last", "Bid", "Ask", "Vol", "OI", "IV"].forEach((c, i) => { const th = h("th", i ? "num" : "strike", c); th.scope = "col"; hr.appendChild(th); });
+      thead.appendChild(hr); table.appendChild(thead);
+      const tbody = h("tbody");
+      for (const r of rows) {
+        const itm = optView.side === "calls" ? r[0] < spot : r[0] > spot;
+        const tr = h("tr", (r === atm ? "atm " : "") + (itm ? "itm" : ""));
+        tr.append(h("td", "strike num", fmtPrice(r[0]).replace(/\.00$/, "")), h("td", "num", fmtPrice(r[1])), h("td", "num", fmtPrice(r[2])), h("td", "num", fmtPrice(r[3])),
+          h("td", "num", fmtInt(r[4])), h("td", "num", fmtInt(r[5])), h("td", "num", r[6] != null ? (r[6] * 100).toFixed(0) + "%" : "—"));
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody); wrap.appendChild(table);
+      const asOf = data.asOf ? new Date(data.asOf) : null;
+      foot.textContent = `Standard monthly expirations, strikes near the spot. Snapshot from the last data refresh${asOf ? ` (${MONTHS[asOf.getMonth()]} ${asOf.getDate()}, ${asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })})` : ""}, not live quotes. Shaded rows are in the money.`;
+    };
+    draw();
+  }
   function newsSection(items) {
     const sec = h("section", "section"); sec.appendChild(h("h3", null, "News"));
     const list = h("div", "news-list");
@@ -516,14 +641,16 @@
   // ---------- view switching ----------
   function setView(v) {
     state.view = v;
-    $("#list").hidden = v !== "markets"; $("#screener").hidden = v !== "screener"; $("#list-head").hidden = v === "screener";
+    $("#list").hidden = v !== "markets"; $("#table").hidden = v !== "table"; $("#screener").hidden = v !== "screener"; $("#list-head").hidden = v === "screener";
     $$("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
-    $("#subchips").hidden = v !== "markets" || !state.sector;
+    $("#subchips").hidden = v === "screener" || !state.sector;
     if (v === "screener") renderScreener();
+    if (v === "table") renderTable();
   }
   function renderAll() {
     renderRail(); renderChips(); renderList();
     if (state.view === "screener") renderScreener();
+    if (state.view === "table") renderTable();
   }
   function svgIcon(name) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "2"); svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
@@ -544,13 +671,13 @@
     const narrow = window.matchMedia("(max-width: 899px)");
     const setPlaceholder = () => { search.placeholder = narrow.matches ? "Search" : "Search ticker or company"; };
     setPlaceholder(); narrow.addEventListener("change", setPlaceholder);
-    search.addEventListener("input", () => { state.query = search.value; search.parentElement.classList.toggle("has-value", !!search.value); renderList(); });
-    $("#clear").addEventListener("click", () => { search.value = ""; state.query = ""; search.parentElement.classList.remove("has-value"); renderList(); search.focus(); });
+    search.addEventListener("input", () => { state.query = search.value; search.parentElement.classList.toggle("has-value", !!search.value); renderList(); if (state.view === "table") renderTable(); });
+    $("#clear").addEventListener("click", () => { search.value = ""; state.query = ""; search.parentElement.classList.remove("has-value"); renderList(); if (state.view === "table") renderTable(); search.focus(); });
     $$("[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
     $$("#sortseg button").forEach((b) => b.addEventListener("click", () => {
       const k = b.dataset.key;
       if (state.sort.key === k) state.sort.dir *= -1; else state.sort = { key: k, dir: k === "name" ? 1 : -1 };
-      renderList();
+      renderList(); if (state.view === "table") renderTable();
     }));
     $("#close").addEventListener("click", closeDetail); $("#scrim").addEventListener("click", closeDetail);
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.open) closeDetail(); });
@@ -560,7 +687,7 @@
     sheet.addEventListener("touchmove", (e) => { if (y0 != null && e.touches[0].clientY - y0 > 90 && window.innerWidth < 700) { y0 = null; closeDetail(); } }, { passive: true });
     setView("markets"); renderAll();
     const hash = decodeURIComponent(location.hash.slice(1)).toUpperCase();
-    if (hash === "SCREENER") setView("screener"); else if (state.bySym[hash]) openDetail(hash);
+    if (hash === "SCREENER") setView("screener"); else if (hash === "TABLE") setView("table"); else if (state.bySym[hash]) openDetail(hash);
   }
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", boot) : boot();
 })();

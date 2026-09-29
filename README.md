@@ -7,6 +7,10 @@ consensus, and a configurable daily price-move screen. Companies are organised b
 GICS sector, industry group and sub-industry, the same taxonomy sell-side research
 coverage uses.
 
+A Table tab lists every company by sector with price, day change, forward P/E, P/E and
+market cap in sortable columns, and each company's detail sheet carries option chains for
+the next three monthly expirations.
+
 It is a static site: no server, no API keys in the browser. A Python pipeline
 produces JSON; the page reads it. GitHub Actions refreshes the data every weekday
 after the close and deploys to GitHub Pages.
@@ -20,6 +24,7 @@ app/                    the site (open index.html, or deploy the folder as-is)
   data/stocks.json      the universe (503 rows) - generated
   data/alerts.json      the daily screen results - generated
   data/history/*.json   per-sector price history + news bundles, lazy-loaded - generated
+  data/options/*.json   per-sector option chains (next 3 monthlies), lazy-loaded - generated
 pipeline/
   fetch_data.py         Wikipedia constituents + Yahoo Finance (yfinance) -> app/data
   screen.py             applies screener.config.json -> app/data/alerts.json
@@ -38,7 +43,8 @@ python pipeline/screen.py
 python -m http.server 8000 --directory app   # then open http://localhost:8000
 ```
 
-`fetch_data.py --limit 20` fetches a subset while developing.
+`fetch_data.py --limit 20` fetches a subset while developing; `--skip-options` skips the
+option chains, which roughly halves the run time.
 
 ## Daily screen rules
 
@@ -75,5 +81,8 @@ the artifact.
   EPS is the sum of the four reported quarters so it sits on the same basis as
   the consensus; a year without four quarters on file falls back to GAAP diluted
   EPS and is labelled as such in the chart tooltip.
+- Option chains cover the next three standard monthly expirations (third Friday), with
+  strikes within 20% of the spot price (35% when a chain is sparse). Prices are a snapshot
+  from the run, not live quotes.
 - Fiscal quarter labels follow each company's fiscal year end (Apple's Q4 ends
   in September, Nvidia's fiscal 2027 began in February 2026).

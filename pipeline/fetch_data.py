@@ -33,6 +33,7 @@ warnings.filterwarnings("ignore")
 WIKI = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; sp500-screener/1.0)"}
 WINDOWS = {"1d": 1, "1w": 5, "1m": 21, "3m": 63, "6m": 126, "1y": 252}
+FETCH_OPTIONS = True
 
 
 def log(*a):
@@ -97,6 +98,56 @@ def since_earnings(closes: pd.Series, report_date: str | None, price) -> float |
     if prior.empty or not prior.iloc[-1]:
         return None
     return num((price / float(prior.iloc[-1]) - 1) * 100)
+
+
+def is_monthly_expiry(date_str: str) -> bool:
+    """Standard monthly options expire the third Friday (Thursday when Friday is a holiday)."""
+    d = datetime.strptime(date_str, "%Y-%m-%d")
+    return 15 <= d.day <= 21 and d.weekday() in (3, 4)
+
+
+def fetch_options(tk, price, n_expiries=3):
+    """Option chains for the next monthly expirations, trimmed to strikes near the spot.
+
+    Rows are [strike, last, bid, ask, volume, openInterest, impliedVol]. Strikes within
+    ±20% of spot are kept, widening to ±35% when a side would have fewer than 8 rows.
+    """
+    out = {"spot": num(price), "exps": []}
+    if not price:
+        return out
+    try:
+        exps = [e for e in (tk.options or []) if is_monthly_expiry(e)][:n_expiries]
+    except Exception as e:  # noqa: BLE001
+        log("options list failed", tk.ticker, e)
+        return out
+    for exp in exps:
+        chain = None
+        for attempt in range(3):
+            try:
+                chain = tk.option_chain(exp)
+                break
+            except Exception as e:  # noqa: BLE001
+                if attempt == 2:
+                    log("option_chain failed", tk.ticker, exp, e)
+                time.sleep(1.5 * (attempt + 1))
+        if chain is None:
+            continue
+        sides = {}
+        for side, df in (("calls", chain.calls), ("puts", chain.puts)):
+            rows = []
+            if df is not None and len(df):
+                for band in (0.20, 0.35):
+                    sub = df[(df["strike"] >= price * (1 - band)) & (df["strike"] <= price * (1 + band))]
+                    if len(sub) >= 8 or band == 0.35:
+                        break
+                for r in sub.sort_values("strike").itertuples():
+                    rows.append([num(r.strike), num(r.lastPrice), num(r.bid), num(r.ask),
+                                 int(r.volume) if r.volume == r.volume else 0,
+                                 int(r.openInterest) if r.openInterest == r.openInterest else 0,
+                                 num(r.impliedVolatility, 3)])
+            sides[side] = rows
+        out["exps"].append({"d": exp, **sides})
+    return out
 
 
 def fiscal_quarter_label(report_dt: pd.Timestamp, fye_month: int | None) -> tuple[str, str]:
@@ -270,6 +321,9 @@ def fetch_ticker(row) -> dict:
     except Exception as e:  # noqa: BLE001
         log("news failed", row.symbol, e)
     out["news"] = news[:6]
+
+    # ---- option chains (next monthly expirations) ------------------------------
+    out["opt"] = fetch_options(tk, price) if FETCH_OPTIONS else {"spot": num(price), "exps": []}
     return out
 
 
@@ -278,9 +332,13 @@ def main():
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "app", "data"))
     ap.add_argument("--limit", type=int, default=0, help="only first N tickers (testing)")
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--skip-options", action="store_true", help="skip option chains (faster dev runs)")
     args = ap.parse_args()
+    global FETCH_OPTIONS
+    FETCH_OPTIONS = not args.skip_options
     out_dir = os.path.abspath(args.out)
     os.makedirs(os.path.join(out_dir, "history"), exist_ok=True)
+    os.makedirs(os.path.join(out_dir, "options"), exist_ok=True)
 
     log("fetching constituents")
     cons = constituents()
@@ -313,6 +371,7 @@ def main():
     as_of = datetime.now(timezone.utc).isoformat(timespec="seconds")
     stocks = []
     bundles: dict[str, dict] = {}
+    opt_bundles: dict[str, dict] = {}
     for r in cons.itertuples(index=False):
         f = fundamentals.get(r.symbol, {})
         d = daily[r.yahoo].dropna() if r.yahoo in daily else pd.Series(dtype=float)
@@ -355,6 +414,7 @@ def main():
             "w": [[ts.strftime("%Y-%m-%d"), num(v)] for ts, v in w.items()],
             "news": f.get("news") or [],
         }
+        opt_bundles.setdefault(slug(r.sector), {})[r.symbol] = f.get("opt") or {"spot": price, "exps": []}
 
     # sector tree: sector -> groups -> sub-industries, with counts
     tree = []
@@ -382,8 +442,12 @@ def main():
     for sec, b in bundles.items():
         with open(os.path.join(out_dir, "history", f"{sec}.json"), "w") as fh:
             json.dump(b, fh, separators=(",", ":"))
+    for sec, b in opt_bundles.items():
+        with open(os.path.join(out_dir, "options", f"{sec}.json"), "w") as fh:
+            json.dump({"asOf": as_of, "chains": b}, fh, separators=(",", ":"))
     missing_price = [s["t"] for s in stocks if s["price"] is None]
-    log(f"wrote {len(stocks)} stocks, {len(bundles)} history bundles; missing price: {missing_price}")
+    with_opts = sum(1 for b in opt_bundles.values() for v in b.values() if v.get("exps"))
+    log(f"wrote {len(stocks)} stocks, {len(bundles)} history bundles, options for {with_opts}; missing price: {missing_price}")
 
 
 if __name__ == "__main__":
