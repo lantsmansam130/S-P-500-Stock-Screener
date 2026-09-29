@@ -103,7 +103,6 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2
 .app { position: relative; z-index: 1; height: 100%; width: 100%; display: grid; grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); }
 .topbar {
   display: flex; align-items: center; gap: 12px; padding: 10px 16px; min-width: 0;
-  padding-top: calc(10px + env(safe-area-inset-top, 0px));
   border-width: 0 0 1px 0; border-radius: 0; position: sticky; top: 0; z-index: 5;
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -398,17 +397,23 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2
 /* ---------- phone ---------- */
 @media (max-width: 699px) {
   body { font-size: 14px; }
-  .topbar { padding: 8px 14px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
+  .topbar { padding: 8px 14px; }
   .brand .asof { display: none; }
   .topbar .seg.view { display: none; }
   .search { max-width: none; }
-  .list-head { padding: 10px 16px 6px; }
-  .crumb h2 { font-size: 20px; }
+  .list-head { padding: 8px 14px 6px; gap: 6px; flex-direction: column; align-items: stretch; }
+  .crumb { min-width: 0; flex-wrap: nowrap; align-items: baseline; }
+  .crumb h2 { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crumb .sub { display: none; }
+  .sort-label { display: none; }
+  .controls .seg { width: 100%; }
+  .controls .seg.small button { flex: 1; text-align: center; padding: 6px 4px; font-size: 12px; min-height: 32px; }
+  .chips { padding-top: 8px; }
+  .tbl th, .tbl td { padding: 8px 6px; }
+  .tbl td.co .nm { max-width: 118px; }
+  .tbl td .pill { min-width: 58px; padding: 3px 6px; font-size: 12px; }
   .list { padding: 0 8px 96px; }
   .cols { display: none; }
-  .tbl th, .tbl td { padding: 8px 8px; }
-  .tbl td.co .nm { max-width: 150px; }
-  .tbl td .pill { min-width: 64px; font-size: 12px; }
   .opt th, .opt td { padding: 6px 6px; font-size: 12px; }
   .row { grid-template-columns: minmax(0, 1fr) 84px auto; gap: 10px; padding: 10px 10px; }
   .row .spark { height: 32px; }
