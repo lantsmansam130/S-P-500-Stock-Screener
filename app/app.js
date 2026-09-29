@@ -275,7 +275,7 @@
     const wrap = h("div", "tbl-wrap");
     const table = h("table", "tbl");
     const thead = h("thead"); const hr = h("tr");
-    const cols = [["Company", null, ""], ["Price", null, "num"], ["P/E (TTM)", "pe", "num wide"], ["Fwd P/E", "fpe", "num"], ["P/E − Fwd", "pediff", "num"], ["Mkt cap", "mcap", "num wide"]];
+    const cols = [["Company", null, ""], ["Price", null, "num"], ["P/E", "pe", "num"], ["Fwd P/E", "fpe", "num"], ["P/E − Fwd", "pediff", "num"], ["Mkt cap", "mcap", "num wide"]];
     for (const [label, key, cls] of cols) {
       const th = h("th", cls); th.scope = "col";
       if (key) {
@@ -305,7 +305,7 @@
           const tr = h("tr", "stk"); tr.tabIndex = 0; tr.setAttribute("role", "button");
           const c1 = h("td", "co"); const line = h("div", "tkline"); line.append(h("span", "tk", s.t)); c1.append(line, h("div", "nm", s.n));
           const c2 = h("td", "num", fmtPrice(s.price));
-          const c3 = h("td", "num wide", fmtX(s.val?.pe));
+          const c3 = h("td", "num", fmtX(s.val?.pe));
           const c4 = h("td", "num", fmtX(s.val?.fpe));
           const d = peDiff(s);
           const c5 = h("td", "num"); c5.appendChild(h("span", `pill ${tone(d)}`, fmtDiff(d)));
