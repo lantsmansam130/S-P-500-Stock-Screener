@@ -133,7 +133,7 @@
       (!state.sector || s.sector === state.sector) && (!state.group || s.group === state.group) && (!state.sub || s.sub === state.sub) &&
       (!q || s.t.toLowerCase().includes(q) || s.n.toLowerCase().includes(q)));
     const { key, dir } = state.sort;
-    const val = (s) => key === "name" ? s.n : key === "chg" ? s.chgPct : key === "m1" ? s.ret?.["1m"] : key === "fpe" ? s.val?.fpe : key === "pe" ? s.val?.pe : s.mcap;
+    const val = (s) => key === "name" ? s.n : key === "chg" ? s.chgPct : key === "m1" ? s.ret?.["1m"] : key === "fpe" ? s.val?.fpe : key === "pe" ? s.val?.pe : key === "pediff" ? peDiff(s) : s.mcap;
     rows.sort((a, b) => {
       const va = val(a), vb = val(b);
       if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1;
@@ -262,6 +262,10 @@
     $$("#sortseg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.key === state.sort.key)));
   }
 
+  /** Trailing P/E minus forward P/E: positive when the multiple compresses on next year's earnings. */
+  const peDiff = (s) => (s.val?.pe != null && s.val?.fpe != null) ? s.val.pe - s.val.fpe : null;
+  const fmtDiff = (d) => d == null ? "—" : (d > 0 ? "+" : "") + d.toFixed(1) + "×";
+
   // ---------- rendering: table (by sector) ----------
   let tblCollapsed = {};
   try { tblCollapsed = JSON.parse(localStorage.getItem("sp500.tblCollapsed") || "{}"); } catch (_) { /* per-viewer convenience */ }
@@ -271,11 +275,12 @@
     const wrap = h("div", "tbl-wrap");
     const table = h("table", "tbl");
     const thead = h("thead"); const hr = h("tr");
-    const cols = [["Company", null, ""], ["Price", null, "num"], ["Today", "chg", "num"], ["Fwd P/E", "fpe", "num"], ["P/E (TTM)", "pe", "num wide"], ["Mkt cap", "mcap", "num wide"]];
+    const cols = [["Company", null, ""], ["Price", null, "num"], ["P/E (TTM)", "pe", "num wide"], ["Fwd P/E", "fpe", "num"], ["P/E − Fwd", "pediff", "num"], ["Mkt cap", "mcap", "num wide"]];
     for (const [label, key, cls] of cols) {
       const th = h("th", cls); th.scope = "col";
       if (key) {
         const b = h("button", "th-btn", label); b.type = "button";
+        if (key === "pediff") b.title = "Trailing P/E minus forward P/E. Positive means the multiple is lower on next year's expected earnings.";
         if (state.sort.key === key) { b.setAttribute("aria-sort", state.sort.dir < 0 ? "descending" : "ascending"); b.appendChild(h("span", "arrow", state.sort.dir < 0 ? "↓" : "↑")); }
         b.addEventListener("click", () => { if (state.sort.key === key) state.sort.dir *= -1; else state.sort = { key, dir: -1 }; renderTable(); syncSortSeg(); });
         th.appendChild(b);
@@ -300,9 +305,10 @@
           const tr = h("tr", "stk"); tr.tabIndex = 0; tr.setAttribute("role", "button");
           const c1 = h("td", "co"); const line = h("div", "tkline"); line.append(h("span", "tk", s.t)); c1.append(line, h("div", "nm", s.n));
           const c2 = h("td", "num", fmtPrice(s.price));
-          const c3 = h("td", "num"); c3.appendChild(pill(s.chgPct));
+          const c3 = h("td", "num wide", fmtX(s.val?.pe));
           const c4 = h("td", "num", fmtX(s.val?.fpe));
-          const c5 = h("td", "num wide", fmtX(s.val?.pe));
+          const d = peDiff(s);
+          const c5 = h("td", "num"); c5.appendChild(h("span", `pill ${tone(d)}`, fmtDiff(d)));
           const c6 = h("td", "num wide", fmtCap(s.mcap));
           tr.append(c1, c2, c3, c4, c5, c6);
           tr.addEventListener("click", () => openDetail(s.t));
