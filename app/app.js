@@ -222,15 +222,17 @@
     b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(s.t); } });
     const ident = h("div", "ident");
     const tkline = h("div", "tkline"); tkline.append(h("span", "tk", s.t), h("span", "sectag", state.sectorShort[s.sector] || s.sector));
-    ident.append(tkline, h("div", "nm", s.n));
+    const nm = h("div", "nm"); nm.appendChild(h("span", "nm-text", s.n)); ident.append(tkline, nm);
     const sec = h("div", "sec", state.group ? s.sub : s.group);
     const spark = Charts.sparkline(s.spark);
     const mcap = h("div", "mcap num", fmtCap(s.mcap));
+    const fpe = h("div", "fpe num", fmtX(s.val?.fpe));
+    const nmFpe = h("span", "nm-fpe num", ` · ${fmtX(s.val?.fpe)} fwd`); ident.querySelector(".nm").appendChild(nmFpe);
     const px = h("div", "px num", fmtPrice(s.price));
     const pct = pctKey === "1d" ? s.chgPct : s.ret?.[pctKey];
     const pillwrap = h("div", "pillwrap"); pillwrap.appendChild(pill(pct));
     const mobile = h("div", "mobile-px"); mobile.append(h("span", "px num", fmtPrice(s.price)), pill(pct));
-    b.append(ident, sec, spark, mcap, px, pillwrap, mobile);
+    b.append(ident, sec, spark, mcap, fpe, px, pillwrap, mobile);
     b.addEventListener("click", () => openDetail(s.t));
     return b;
   }
@@ -252,7 +254,7 @@
       crumb.appendChild(h("span", "sub", `${state.data.sectors.length} GICS sectors · cap-weighted today ${fmtPct(capWeighted(state.data.stocks))}`));
     }
     const cols = h("div", "cols glass");
-    ["Company", state.group ? "Sub-industry" : "Industry group", "30 days", "Mkt cap", "Price", "Today"].forEach((c) => cols.appendChild(h("span", null, c)));
+    ["Company", state.group ? "Sub-industry" : "Industry group", "30 days", "Mkt cap", "Fwd P/E", "Price", "Today"].forEach((c) => cols.appendChild(h("span", null, c)));
     list.appendChild(cols);
     if (!rows.length) { list.appendChild(h("div", "empty", "No companies match.")); return; }
     const frag = document.createDocumentFragment();
@@ -405,7 +407,7 @@
     if (w === "earn") head.appendChild(h("span", "meta note", "Measured from the last close before each company's most recent earnings report, so the earnings-day reaction is included."));
     const list = $("#screenlist"); list.replaceChildren();
     const cols = h("div", "cols glass");
-    ["Company", "Industry group", "30 days", "Mkt cap", "Price", w === "earn" ? "Since ER" : WINDOW_SHORT[w]].forEach((c) => cols.appendChild(h("span", null, c)));
+    ["Company", "Industry group", "30 days", "Mkt cap", "Fwd P/E", "Price", w === "earn" ? "Since ER" : WINDOW_SHORT[w]].forEach((c) => cols.appendChild(h("span", null, c)));
     list.appendChild(cols);
     if (!rows.length) { list.appendChild(h("div", "empty", "Nothing crossed that threshold. Lower the minimum move or widen the time frame.")); return; }
     const frag = document.createDocumentFragment();
