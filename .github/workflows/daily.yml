@@ -29,7 +29,7 @@ jobs:
           cache: pip
       - run: pip install -r pipeline/requirements.txt
       - name: Fetch S&P 500 data
-        run: python pipeline/fetch_data.py --workers 6
+        run: python pipeline/fetch_data.py --workers 4 --rate 4
       - name: Run daily price screens
         run: python pipeline/screen.py
       - name: Commit refreshed data

@@ -11,6 +11,7 @@ Run screen.py afterwards to produce alerts.json.
 from __future__ import annotations
 
 import argparse
+import glob
 import io
 import json
 import math
@@ -34,6 +35,46 @@ WIKI = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; sp500-screener/1.0)"}
 WINDOWS = {"1d": 1, "1w": 5, "1m": 21, "3m": 63, "6m": 126, "1y": 252}
 FETCH_OPTIONS = True
+
+import threading
+
+class Throttle:
+    """Global cap on request rate across worker threads (Yahoo throttles bursts)."""
+    def __init__(self, per_second: float):
+        self.interval = 1.0 / per_second
+        self.lock = threading.Lock()
+        self.next_at = 0.0
+
+    def wait(self):
+        with self.lock:
+            now = time.monotonic()
+            if now < self.next_at:
+                time.sleep(self.next_at - now)
+                now = time.monotonic()
+            self.next_at = max(now, self.next_at) + self.interval
+
+
+THROTTLE = Throttle(4.0)
+
+
+def is_rate_limit(err: Exception) -> bool:
+    msg = str(err).lower()
+    return "too many requests" in msg or "rate limit" in msg or "429" in msg
+
+
+def with_retry(label: str, fn, attempts: int = 4, default=None):
+    """Call fn() through the throttle; back off on rate limits (6s, 12s, 24s)."""
+    for attempt in range(attempts):
+        THROTTLE.wait()
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            if is_rate_limit(e) and attempt < attempts - 1:
+                time.sleep(6 * (2 ** attempt))
+                continue
+            log(label, "failed:", str(e)[:120])
+            return default
+    return default
 
 
 def log(*a):
@@ -115,21 +156,12 @@ def fetch_options(tk, price, n_expiries=3):
     out = {"spot": num(price), "exps": []}
     if not price:
         return out
-    try:
-        exps = [e for e in (tk.options or []) if is_monthly_expiry(e)][:n_expiries]
-    except Exception as e:  # noqa: BLE001
-        log("options list failed", tk.ticker, e)
+    listed = with_retry(f"options list {tk.ticker}", lambda: tk.options, default=None)
+    if listed is None:
         return out
+    exps = [e for e in listed if is_monthly_expiry(e)][:n_expiries]
     for exp in exps:
-        chain = None
-        for attempt in range(3):
-            try:
-                chain = tk.option_chain(exp)
-                break
-            except Exception as e:  # noqa: BLE001
-                if attempt == 2:
-                    log("option_chain failed", tk.ticker, exp, e)
-                time.sleep(1.5 * (attempt + 1))
+        chain = with_retry(f"option_chain {tk.ticker} {exp}", lambda: tk.option_chain(exp), default=None)
         if chain is None:
             continue
         sides = {}
@@ -172,17 +204,7 @@ def fetch_ticker(row) -> dict:
     """Per-ticker fundamentals: quote, valuation, EPS history and estimates."""
     tk = yf.Ticker(row.yahoo)
     out: dict = {"t": row.symbol}
-    last_err = None
-    for attempt in range(4):
-        try:
-            info = tk.info or {}
-            break
-        except Exception as e:  # noqa: BLE001
-            last_err = e
-            time.sleep(2 ** attempt)
-    else:
-        log("info failed", row.symbol, last_err)
-        info = {}
+    info = with_retry(f"info {row.symbol}", lambda: tk.info or {}, default={}) or {}
 
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     prev = info.get("regularMarketPreviousClose") or info.get("previousClose")
@@ -223,7 +245,7 @@ def fetch_ticker(row) -> dict:
     # ---- quarterly EPS: estimate vs reported -------------------------------
     quarters = []
     try:
-        ed = tk.get_earnings_dates(limit=28)
+        ed = with_retry(f"earnings_dates {row.symbol}", lambda: tk.get_earnings_dates(limit=28), default=None)
         if ed is not None and len(ed):
             ed = ed.sort_index()
             for dt, r in ed.iterrows():
@@ -249,7 +271,7 @@ def fetch_ticker(row) -> dict:
     # ---- forward estimates -------------------------------------------------
     est = {}
     try:
-        ee = tk.earnings_estimate
+        ee = with_retry(f"earnings_estimate {row.symbol}", lambda: tk.earnings_estimate, default=None)
         if ee is not None and len(ee):
             for per in ("0q", "+1q", "0y", "+1y"):
                 if per in ee.index:
@@ -282,7 +304,7 @@ def fetch_ticker(row) -> dict:
         by_fy.setdefault(fy, []).append(q)
     gaap: dict[int, float] = {}
     try:
-        inc = tk.income_stmt
+        inc = with_retry(f"income_stmt {row.symbol}", lambda: tk.income_stmt, default=None)
         if inc is not None and "Diluted EPS" in inc.index:
             for col, v in inc.loc["Diluted EPS"].dropna().items():
                 if num(v) is not None:
@@ -312,7 +334,8 @@ def fetch_ticker(row) -> dict:
     # ---- news: latest ticker-scoped headlines ----------------------------------
     news = []
     try:
-        for it in (yf.Search(row.yahoo, news_count=8, include_cb=False).news or []):
+        found = with_retry(f"news {row.symbol}", lambda: yf.Search(row.yahoo, news_count=8, include_cb=False).news or [], default=[])
+        for it in found:
             if not it.get("title") or not it.get("link"):
                 continue
             news.append({"t": it["title"].strip(), "u": it["link"], "p": it.get("publisher"),
@@ -327,13 +350,41 @@ def fetch_ticker(row) -> dict:
     return out
 
 
+def load_previous(out_dir: str) -> dict[str, dict]:
+    """Rebuild per-ticker fundamentals from the files a previous run wrote."""
+    prev: dict[str, dict] = {}
+    try:
+        uni = json.load(open(os.path.join(out_dir, "stocks.json")))
+    except (OSError, ValueError):
+        return prev
+    hist: dict[str, dict] = {}
+    for fpath in glob.glob(os.path.join(out_dir, "history", "*.json")):
+        hist.update(json.load(open(fpath)))
+    opts: dict[str, dict] = {}
+    for fpath in glob.glob(os.path.join(out_dir, "options", "*.json")):
+        opts.update(json.load(open(fpath)).get("chains", {}))
+    for s in uni.get("stocks", []):
+        t = s["t"]
+        prev[t] = {
+            "t": t, "price": s.get("price"), "prev": s.get("prev"), "mcap": s.get("mcap"), "ipo": s.get("ipo"),
+            "val": s.get("val", {}), "desc": s.get("desc"), "site": s.get("site"), "employees": s.get("employees"),
+            "fye": s.get("fye"), "eps": s.get("eps", {}), "news": (hist.get(t) or {}).get("news") or [],
+            "opt": opts.get(t) or {"spot": s.get("price"), "exps": []},
+        }
+    return prev
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "app", "data"))
     ap.add_argument("--limit", type=int, default=0, help="only first N tickers (testing)")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--skip-options", action="store_true", help="skip option chains (faster dev runs)")
+    ap.add_argument("--retry-missing", action="store_true",
+                    help="refetch only tickers whose previous output lacks news, estimates or option chains")
+    ap.add_argument("--rate", type=float, default=4.0, help="max requests per second across workers")
     args = ap.parse_args()
+    THROTTLE.interval = 1.0 / args.rate
     global FETCH_OPTIONS
     FETCH_OPTIONS = not args.skip_options
     out_dir = os.path.abspath(args.out)
@@ -352,11 +403,26 @@ def main():
     log("downloading 5y weekly closes")
     weekly = download_closes(tickers, 5 * 366, "1wk")
 
-    log("fetching fundamentals")
+    # previous outputs, reused for tickers that are already complete in --retry-missing mode
     fundamentals: dict[str, dict] = {}
+    to_fetch = list(cons.itertuples(index=False))
+    if args.retry_missing:
+        prev = load_previous(out_dir)
+        to_fetch = []
+        for r in cons.itertuples(index=False):
+            f = prev.get(r.symbol)
+            complete = f and f.get("news") and (f.get("eps") or {}).get("nextQ") and (
+                not FETCH_OPTIONS or (f.get("opt") or {}).get("exps"))
+            if complete:
+                fundamentals[r.symbol] = f
+            else:
+                to_fetch.append(r)
+        log(f"retry-missing: {len(to_fetch)} incomplete tickers, {len(fundamentals)} reused")
+
+    log("fetching fundamentals")
     done = 0
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futs = {ex.submit(fetch_ticker, r): r.symbol for r in cons.itertuples(index=False)}
+        futs = {ex.submit(fetch_ticker, r): r.symbol for r in to_fetch}
         for f in as_completed(futs):
             sym = futs[f]
             try:
@@ -366,7 +432,7 @@ def main():
                 fundamentals[sym] = {"t": sym}
             done += 1
             if done % 50 == 0:
-                log(f"  {done}/{len(tickers)}")
+                log(f"  {done}/{len(to_fetch)}")
 
     as_of = datetime.now(timezone.utc).isoformat(timespec="seconds")
     stocks = []
