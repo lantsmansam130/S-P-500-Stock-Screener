@@ -13,6 +13,8 @@
     return (v) => r0 + ((v - d0) / span) * (r1 - r0);
   };
   const toneOf = (a, b) => (b > a ? "up" : b < a ? "down" : "flat");
+  /** Draw at the container's real width so nothing is stretched; 600 when not yet laid out. */
+  const widthOf = (container) => Math.max(280, Math.round(container.getBoundingClientRect().width) || 600);
   const COLOR = { up: "var(--up)", down: "var(--down)", flat: "var(--fg-2)", accent: "var(--accent)" };
 
   /** Sparkline: closes[] -> <svg>. Colored by the direction over the whole span. */
@@ -37,7 +39,7 @@
   /** Price chart. series: [[dateISO, close], ...]. onHover(point|null) reports the hovered point. */
   function priceChart(container, series, opts = {}) {
     container.replaceChildren();
-    const W = 600, H = 220, padL = 6, padR = 6, padT = 14, padB = 22;
+    const W = widthOf(container), H = 220, padL = 6, padR = 6, padT = 14, padB = 22;
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img" }, container);
     const tip = document.createElement("div"); tip.className = "tip"; container.appendChild(tip);
     const pts = (series || []).filter((p) => p[1] != null);
@@ -102,7 +104,7 @@
       Estimate = lightly shaded dot; actual = solid dot colored by beat/miss. */
   function earningsChart(container, rows, opts = {}) {
     container.replaceChildren();
-    const W = 600, H = 230, padL = 44, padR = 16, padT = 18, padB = 44;
+    const W = widthOf(container), H = 230, small = W < 440, padL = small ? 38 : 44, padR = small ? 10 : 16, padT = 18, padB = 44;
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img" }, container);
     const tip = document.createElement("div"); tip.className = "tip"; container.appendChild(tip);
     if (!rows || !rows.length) { el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", fill: "var(--fg-3)", "font-size": 13 }, svg).textContent = "No earnings data"; return; }
@@ -110,7 +112,8 @@
     let min = Math.min(0, ...vals), max = Math.max(0, ...vals);
     if (min === max) { max = min + 1; }
     const pad = (max - min) * 0.12; min -= pad; max += pad;
-    const x = scale(0, rows.length - 1, padL + 30, W - padR - 30), y = scale(min, max, H - padB, padT);
+    const inset = small ? 22 : 30;
+    const x = scale(0, rows.length - 1, padL + inset, W - padR - inset), y = scale(min, max, H - padB, padT);
     // gridlines: 4 clean ticks
     const step = niceStep((max - min) / 4);
     for (let t = Math.ceil(min / step) * step; t <= max; t += step) {
@@ -129,7 +132,8 @@
       const cx = x(i);
       const g = el("g", { class: "ep", tabindex: 0, role: "img" }, svg);
       // hit area
-      el("rect", { x: cx - 28, y: padT - 6, width: 56, height: H - padT - padB + 12, fill: "transparent" }, g);
+      const half = Math.min(28, (x(1) - x(0)) / 2 || 28);
+      el("rect", { x: cx - half, y: padT - 6, width: half * 2, height: H - padT - padB + 12, fill: "transparent" }, g);
       if (r.est != null) {
         const cy = y(r.est);
         el("circle", { cx, cy, r: 8, fill: "var(--bg)" }, g);
@@ -142,8 +146,8 @@
         el("circle", { cx, cy, r: 8, fill: "var(--bg)" }, g);
         el("circle", { cx, cy, r: 6, fill: COLOR[tone] }, g);
       }
-      el("text", { x: cx, y: H - padB + 18, "text-anchor": "middle", fill: r.future ? "var(--fg-3)" : "var(--fg-2)", "font-size": 11.5, "font-weight": 600, "font-family": "inherit" }, g).textContent = r.p;
-      const sub = el("text", { x: cx, y: H - padB + 33, "text-anchor": "middle", "font-size": 11, "font-family": "inherit" }, g);
+      el("text", { x: cx, y: H - padB + 18, "text-anchor": "middle", fill: r.future ? "var(--fg-3)" : "var(--fg-2)", "font-size": small ? 10.5 : 11.5, "font-weight": 600, "font-family": "inherit" }, g).textContent = r.p;
+      const sub = el("text", { x: cx, y: H - padB + 33, "text-anchor": "middle", "font-size": small ? 10 : 11, "font-family": "inherit" }, g);
       if (r.act != null && r.est != null && r.est !== 0) {
         const sp = ((r.act - r.est) / Math.abs(r.est)) * 100;
         sub.setAttribute("fill", sp >= 0 ? "var(--up)" : "var(--down)");

@@ -18,7 +18,7 @@
     data: null, rules: DEFAULT_RULES, history: {}, options: {}, view: "markets",
     sector: null, group: null, sub: null, query: "", sort: { key: "mcap", dir: -1 },
     screen: { window: "1d", direction: "either", threshold: 4 },
-    open: null, range: "1M", earnMode: "q",
+    open: null, range: "1M", earnMode: "q", redraws: [],
   };
   try { Object.assign(state.screen, JSON.parse(localStorage.getItem("sp500.screen") || "{}")); } catch (_) { /* per-viewer convenience only */ }
 
@@ -394,7 +394,7 @@
     $("#sheet-tk").textContent = s.t; $("#sheet-nm").textContent = s.n;
     const path = $("#sheet-path"); path.replaceChildren();
     path.append(tag(s.sector, "tag sector"), tag(s.group), tag(s.sub));
-    body.replaceChildren(); body.scrollTop = 0;
+    body.replaceChildren(); body.scrollTop = 0; state.redraws = [];
     // hero
     const hero = h("div", "hero");
     const px = h("div", "px num", fmtPrice(s.price)); hero.appendChild(px);
@@ -456,6 +456,7 @@
     for (const r of ["1W", "1M", "3M", "6M", "1Y", "5Y"]) {
       const b = h("button", null, r); b.type = "button"; b.addEventListener("click", () => { state.range = r; draw(); }); segR.appendChild(b);
     }
+    state.redraws.push(draw);
     draw();
   }
   const tag = (txt, cls = "tag") => h("span", cls, txt);
@@ -556,7 +557,10 @@
       }
     };
     [["q", "Quarterly"], ["y", "Annual"]].forEach(([m, l]) => { const b = h("button", null, l); b.type = "button"; b.dataset.m = m; b.addEventListener("click", () => { state.earnMode = m; draw(); }); seg.appendChild(b); });
-    head.appendChild(seg); sec.append(head, legend, wrap, note); draw(); return sec;
+    head.appendChild(seg); sec.append(head, legend, wrap, note);
+    state.redraws.push(draw);
+    requestAnimationFrame(draw); // measure the real width once the section is in the sheet
+    return sec;
   }
   // ---------- options ----------
   const optView = { exp: 0, side: "calls" };
@@ -676,6 +680,8 @@
     }));
     $("#close").addEventListener("click", closeDetail); $("#scrim").addEventListener("click", closeDetail);
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.open) closeDetail(); });
+    let rsz = null;
+    window.addEventListener("resize", () => { clearTimeout(rsz); rsz = setTimeout(() => { if (state.open) state.redraws.forEach((f) => f()); }, 150); });
     // swipe down to dismiss on phones
     let y0 = null; const sheet = $("#sheet");
     sheet.addEventListener("touchstart", (e) => { y0 = $("#sheet-body").scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
