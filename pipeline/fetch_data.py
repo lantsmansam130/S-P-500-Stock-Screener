@@ -245,6 +245,19 @@ def fetch_ticker(row) -> dict:
                             "high": est["+1y"]["high"], "n": est["+1y"]["n"], "status": "next"})
 
     out["eps"] = {"q": past[-8:], "nextQ": next_q, "y": years[-5:], "nextY": fy_next}
+
+    # ---- news: latest ticker-scoped headlines ----------------------------------
+    news = []
+    try:
+        for it in (yf.Search(row.yahoo, news_count=8, include_cb=False).news or []):
+            if not it.get("title") or not it.get("link"):
+                continue
+            news.append({"t": it["title"].strip(), "u": it["link"], "p": it.get("publisher"),
+                         "d": int(it.get("providerPublishTime") or 0)})
+        news.sort(key=lambda n: -n["d"])
+    except Exception as e:  # noqa: BLE001
+        log("news failed", row.symbol, e)
+    out["news"] = news[:6]
     return out
 
 
@@ -318,12 +331,14 @@ def main():
             "eps": f.get("eps", {}),
             "fye": f.get("fye"),
             "desc": f.get("desc"), "site": f.get("site"), "employees": f.get("employees"),
+            "news": (f.get("news") or [None])[0],
         }
         stocks.append(row)
         b = bundles.setdefault(slug(r.sector), {})
         b[r.symbol] = {
             "d": [[ts.strftime("%Y-%m-%d"), num(v)] for ts, v in d.items()],
             "w": [[ts.strftime("%Y-%m-%d"), num(v)] for ts, v in w.items()],
+            "news": f.get("news") or [],
         }
 
     # sector tree: sector -> groups -> sub-industries, with counts

@@ -19,7 +19,7 @@ app/                    the site (open index.html, or deploy the folder as-is)
   app.js                state, filtering, sorting, screener, detail sheet
   data/stocks.json      the universe (503 rows) - generated
   data/alerts.json      the daily screen results - generated
-  data/history/*.json   per-sector price history bundles, lazy-loaded - generated
+  data/history/*.json   per-sector price history + news bundles, lazy-loaded - generated
 pipeline/
   fetch_data.py         Wikipedia constituents + Yahoo Finance (yfinance) -> app/data
   screen.py             applies screener.config.json -> app/data/alerts.json
@@ -57,7 +57,7 @@ without editing anything.
 
 ## Data notes
 
-- Prices, market cap, valuation ratios, EPS history and consensus come from
+- Prices, market cap, valuation ratios, EPS history, consensus and headlines come from
   Yahoo Finance via `yfinance`. Quotes are the latest available at run time
   (delayed during market hours).
 - "Trading since" is the first trade date Yahoo has on file, which for very old

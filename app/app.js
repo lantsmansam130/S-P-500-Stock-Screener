@@ -40,6 +40,20 @@
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const parseISO = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d || 1); };
   const fmtDate = (s, long) => { if (!s) return ""; const d = parseISO(s); return long ? `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` : `${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
+  const ago = (unix) => {
+    if (!unix) return "";
+    const mins = Math.max(0, Math.round((Date.now() / 1000 - unix) / 60));
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60); if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.round(hrs / 24); if (days < 7) return `${days}d ago`;
+    const d = new Date(unix * 1000); return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  };
+  const newsLink = (n, cls) => {
+    const a = h("a", cls); a.href = n.u; a.target = "_blank"; a.rel = "noopener";
+    a.addEventListener("click", (e) => e.stopPropagation());
+    a.addEventListener("keydown", (e) => e.stopPropagation());
+    return a;
+  };
   const since = (iso) => {
     if (!iso) return null;
     const d = parseISO(iso), now = new Date();
@@ -169,7 +183,8 @@
 
   // ---------- rendering: list ----------
   function renderRow(s, pctKey) {
-    const b = h("button", "row"); b.type = "button"; b.dataset.t = s.t;
+    const b = h("div", "row"); b.setAttribute("role", "button"); b.tabIndex = 0; b.dataset.t = s.t;
+    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(s.t); } });
     const ident = h("div", "ident");
     const tkline = h("div", "tkline"); tkline.append(h("span", "tk", s.t), h("span", "sectag", state.sectorShort[s.sector] || s.sector));
     ident.append(tkline, h("div", "nm", s.n));
@@ -181,6 +196,11 @@
     const pillwrap = h("div", "pillwrap"); pillwrap.appendChild(pill(pct));
     const mobile = h("div", "mobile-px"); mobile.append(h("span", "px num", fmtPrice(s.price)), pill(pct));
     b.append(ident, sec, spark, mcap, px, pillwrap, mobile);
+    if (s.news && s.news.u) {
+      const a = newsLink(s.news, "news"); a.title = s.news.t;
+      a.append(h("span", "hl", s.news.t), h("span", "src", `${s.news.p ? s.news.p + " · " : ""}${ago(s.news.d)}`));
+      b.appendChild(a);
+    }
     b.addEventListener("click", () => openDetail(s.t));
     return b;
   }
@@ -312,6 +332,7 @@
     // chart
     const hist = await historyFor(s);
     if (state.open !== t) return;
+    if (hist.news && hist.news.length) body.appendChild(newsSection(hist.news));
     const draw = () => {
       let series;
       if (state.range === "5Y") series = hist.w;
@@ -441,6 +462,17 @@
     };
     [["q", "Quarterly"], ["y", "Annual"]].forEach(([m, l]) => { const b = h("button", null, l); b.type = "button"; b.dataset.m = m; b.addEventListener("click", () => { state.earnMode = m; draw(); }); seg.appendChild(b); });
     head.appendChild(seg); sec.append(head, legend, wrap, note); draw(); return sec;
+  }
+  function newsSection(items) {
+    const sec = h("section", "section"); sec.appendChild(h("h3", null, "News"));
+    const list = h("div", "news-list");
+    for (const n of items) {
+      if (!n.u) continue;
+      const a = newsLink(n, "news-item");
+      a.append(h("div", "hl", n.t), h("div", "src", `${n.p ? n.p + " · " : ""}${ago(n.d)}`));
+      list.appendChild(a);
+    }
+    sec.appendChild(list); return sec;
   }
   function closeDetail() {
     state.open = null;
