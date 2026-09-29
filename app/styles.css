@@ -215,7 +215,7 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2
 }
 .row .nm { font-size: 12.5px; color: var(--fg-3); white-space: nowrap; display: flex; min-width: 0; }
 .row .nm .nm-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.row .nm-fpe { flex: none; }
+.row .nm-fpe { flex: none; margin-left: 4px; }
 .row .sec { font-size: 12.5px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .spark { height: 34px; width: 100%; display: block; }
 .row .mcap, .row .fpe, .row .px { text-align: right; font-weight: 500; }

@@ -227,7 +227,7 @@
     const spark = Charts.sparkline(s.spark);
     const mcap = h("div", "mcap num", fmtCap(s.mcap));
     const fpe = h("div", "fpe num", fmtX(s.val?.fpe));
-    const nmFpe = h("span", "nm-fpe num", ` · ${fmtX(s.val?.fpe)} fwd`); ident.querySelector(".nm").appendChild(nmFpe);
+    const nmFpe = h("span", "nm-fpe num", `· ${fmtX(s.val?.fpe)} fwd`); ident.querySelector(".nm").appendChild(nmFpe);
     const px = h("div", "px num", fmtPrice(s.price));
     const pct = pctKey === "1d" ? s.chgPct : s.ret?.[pctKey];
     const pillwrap = h("div", "pillwrap"); pillwrap.appendChild(pill(pct));
