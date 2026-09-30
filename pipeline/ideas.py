@@ -50,9 +50,11 @@ def pick_strike(rows, spot, side, otm=0.05, min_oi=25):
     cands = []
     for r in rows:
         k, last, bid, ask, vol, oi, iv = r
-        if not bid or not ask or (oi or 0) < min_oi:
+        if (oi or 0) < min_oi:
             continue
-        mid = (bid + ask) / 2
+        mid = (bid + ask) / 2 if bid and ask else (last or 0)   # pre-market chains carry no bids
+        if mid <= 0:
+            continue
         if side == "call" and k >= spot * (1 + otm):
             cands.append((k, mid, oi))
         if side == "put" and k <= spot * (1 - otm):

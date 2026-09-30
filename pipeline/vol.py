@@ -11,7 +11,8 @@ and writes:
 
 Method: realized vol is the annualised standard deviation of daily log returns.
 ATM implied vol is the average of the call and put IVs interpolated to the spot
-from the two strikes that bracket it, using only quotes with a live bid.
+from the two strikes that bracket it, using quotes with a live bid (or, before the
+open, contracts that have traded and carry open interest).
 """
 import glob
 import json
@@ -41,7 +42,8 @@ def atm_iv(exp, spot):
     """(iv%, open interest at the money, relative bid-ask spread) or (None, 0, None)."""
     ivs, ois, sprs = [], 0, []
     for side in ("calls", "puts"):
-        rows = [r for r in exp.get(side, []) if r[6] and 0.03 < r[6] < 3 and (r[2] or 0) > 0]
+        # a live bid during the session; before the open fall back to contracts that have traded
+        rows = [r for r in exp.get(side, []) if r[6] and 0.03 < r[6] < 3 and ((r[2] or 0) > 0 or ((r[1] or 0) > 0 and (r[5] or 0) > 0))]
         if len(rows) < 2:
             continue
         below = [r for r in rows if r[0] <= spot]
